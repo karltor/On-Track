@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>På Rätt Spår - Host</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-slate-900 text-white min-h-screen font-sans">
+    <div id="app" class="max-w-5xl mx-auto p-8 pb-24">
+        <div class="flex items-center justify-center h-64">
+            <p class="text-slate-400 animate-pulse">Laddar session...</p>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
+        import { getFirestore, doc, collection, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+
+        const app = initializeApp({
+            apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
+            authDomain: "on-track-d77d0.firebaseapp.com",
+            projectId: "on-track-d77d0",
+            storageBucket: "on-track-d77d0.firebasestorage.app",
+            messagingSenderId: "515234485983",
+            appId: "1:515234485983:web:daa02d8bbc09e30a65fb6a"
+        });
+        const db = getFirestore(app);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const sessionPin = urlParams.get('session');
+        const adminToken = localStorage.getItem(`pa_sparet_admin_${sessionPin}`);
+
+        if (!sessionPin || !adminToken) {
+            alert("Ogiltig session eller saknad behörighet.");
+            window.location.href = 'index.html';
+        }
+
+        let sessionData = null;
+        let playersData = [];
+        const POINTS = [10, 8, 6, 4, 2];
+
+        // Lyssna på Session
+        onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
+            if (docSnap.exists()) {
+                sessionData = docSnap.data();
+                if(sessionData.adminToken !== adminToken) {
+                    alert("Obehörig!"); window.location.href = 'index.html'; return;
+                }
+                render();
+            }
+        });
+
+        // Lyssna på Spelare
+        onSnapshot(collection(db, "sessions", sessionPin, "players"), (querySnapshot) => {
+            playersData = [];
+            querySnapshot.forEach((doc) => {
+                playersData.push({ id: doc.id, ...doc.data() });
+            });
+            render();
+        });
+
+        // --- ACTIONS ---
+        window.randomizeTeams = async () => {
+            const teamSize = parseInt(document.getElementById('teamSize').value) || 3;
+            const activePlayers = playersData.filter(p => !p.banned);
+            const shuffled = activePlayers.sort(() => 0.5 - Math.random());
+            
+            const numTeams = Math.ceil(shuffled.length / teamSize);
+            const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e', '#84cc16'];
+            const teams = Array.from({length: numTeams}, (_, i) => ({
+                id: `team_${i}`, name: `Lag ${i+1}`, color: colors[i % colors.length]
+            }));
+
+            const batch = writeBatch(db);
+            shuffled.forEach((p, index) => {
+                const teamId = teams[index % numTeams].id;
+                batch.update(doc(db, "sessions", sessionPin, "players", p.id), { teamId });
+            });
+            batch.update(doc(db, "sessions", sessionPin), { teams });
+            await batch.commit();
+        };
+
+        window.startGame = () => updateDoc(doc(db, "sessions", sessionPin), { gameState: 'playing', currentBoardIndex: 0, currentClueIndex: 0 });
+        window.nextClue = () => updateDoc(doc(db, "sessions", sessionPin), { currentClueIndex: Math.min(4, sessionData.currentClueIndex + 1) });
+        window.revealAnswer = () => updateDoc(doc(db, "sessions", sessionPin), { gameState: 'revealing' });
+        
+        window.markAnswer = async (playerId, isCorrect) => {
+            const p = playersData.find(p => p.id === playerId);
+            const ans = p.answers[sessionData.currentBoardIndex];
+            const points = isCorrect ? POINTS[ans.clueIndex] : 0;
+            
+            await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), {
+                [`answers.${sessionData.currentBoardIndex}.correct`]: isCorrect,
+                [`answers.${sessionData.currentBoardIndex}.points`]: points
+            });
+        };
+
+        window.nextQuestion = () => {
+            if(sessionData.currentBoardIndex >= sessionData.boards.length - 1) {
+                updateDoc(doc(db, "sessions", sessionPin), { gameState: 'finished' });
+            } else {
+                updateDoc(doc(db, "sessions", sessionPin), { 
+                    gameState: 'playing', 
+                    currentBoardIndex: sessionData.currentBoardIndex + 1, 
+                    currentClueIndex: 0 
+                });
+            }
+        };
+
+        window.banPlayer = async (playerId) => {
+            if(confirm("Banna denna spelare?")) {
+                await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { banned: true });
+            }
+        };
+
+        // --- RENDER ---
+        function render() {
+            if (!sessionData) return;
+            const appEl = document.getElementById('app');
+            const activePlayers = playersData.filter(p => !p.banned);
+
+            // Topbar
+            let html = `
+                <header class="flex justify-between items-center mb-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
+                    <div>
+                        <h1 class="text-3xl font-black text-amber-500">PIN: ${sessionPin}</h1>
+                        <p class="text-slate-400 text-sm">Elever joinar på: <span class="text-white">${window.location.origin}/play.html?session=${sessionPin}</span></p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-sm text-slate-400">Spelare anslutna</p>
+                        <p class="text-2xl font-bold">${activePlayers.length}</p>
+                    </div>
+                </header>
+            `;
+
+            if (sessionData.gameState === 'lobby') {
+                html += `
+                    <div class="grid grid-cols-2 gap-8">
+                        <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
+                            <h2 class="text-xl font-bold mb-4">Väntrum</h2>
+                            <ul class="space-y-2 mb-6">
+                                ${activePlayers.map(p => `
+                                    <li class="flex justify-between items-center bg-slate-900 p-3 rounded-lg border border-slate-700">
+                                        <span class="font-semibold">${p.name}</span>
+                                        <button onclick="banPlayer('${p.id}')" class="text-red-400 hover:text-red-300 text-sm">Kick</button>
+                                    </li>
+                                `).join('') || '<p class="text-slate-500">Inga spelare ännu...</p>'}
+                            </ul>
+                        </div>
+                        <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-6">
+                            <div>
+                                <h2 class="text-xl font-bold mb-2">Lagindelning</h2>
+                                <label class="block text-sm text-slate-400 mb-1">Önskad lagstorlek</label>
+                                <input type="number" id="teamSize" value="3" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-white mb-3">
+                                <button onclick="randomizeTeams()" class="w-full bg-slate-700 hover:bg-slate-600 font-bold py-2 rounded-md transition">Slumpa Lag</button>
+                            </div>
+                            ${sessionData.teams?.length > 0 ? `
+                                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700">
+                                    <p class="text-sm font-bold text-emerald-400 mb-2">${sessionData.teams.length} lag skapade!</p>
+                                    <button onclick="startGame()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 rounded-lg text-lg transition shadow-lg">Starta Spelet</button>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            } 
+            else if (sessionData.gameState === 'playing') {
+                const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
+                html += `
+                    <div class="text-center mb-8">
+                        <p class="text-amber-500 font-bold tracking-widest uppercase text-sm mb-2">Fråga ${sessionData.currentBoardIndex + 1} av ${sessionData.boards.length}</p>
+                        <div class="bg-slate-800 border border-slate-700 rounded-xl p-8 mb-6 shadow-xl">
+                            <p class="text-slate-400 text-sm font-bold mb-4 uppercase">Ledtråd ${sessionData.currentClueIndex + 1} (${POINTS[sessionData.currentClueIndex]} poäng)</p>
+                            <h2 class="text-3xl font-black text-white leading-tight">${currentBoard.clues[sessionData.currentClueIndex]}</h2>
+                        </div>
+                        <div class="flex justify-center gap-4">
+                            ${sessionData.currentClueIndex < 4 ? `<button onclick="nextClue()" class="px-6 py-3 bg-slate-700 hover:bg-slate-600 font-bold rounded-lg transition">Visa nästa ledtråd</button>` : ''}
+                            <button onclick="revealAnswer()" class="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold rounded-lg transition shadow-lg">Lås spelet & Visa facit</button>
+                        </div>
+                    </div>
+
+                    <h3 class="text-xl font-bold mb-4">Lagstatus</h3>
+                    <div class="grid grid-cols-3 gap-4">
+                        ${sessionData.teams.map(team => {
+                            const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
+                            const lockedCount = teamPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
+                            return `
+                                <div class="bg-slate-800 p-4 rounded-xl border-l-4" style="border-left-color: ${team.color}">
+                                    <h4 class="font-bold mb-2">${team.name}</h4>
+                                    <p class="text-sm text-slate-400">${lockedCount} av ${teamPlayers.length} har låst sitt svar.</p>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+            else if (sessionData.gameState === 'revealing') {
+                const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
+                html += `
+                    <div class="text-center mb-8">
+                        <p class="text-slate-400 font-bold uppercase mb-2">Rätt svar var</p>
+                        <h2 class="text-5xl font-black text-emerald-400 mb-8">${currentBoard.answer}</h2>
+                        <button onclick="nextQuestion()" class="px-8 py-3 bg-amber-500 hover:bg-amber-400 text-slate-900 text-lg font-bold rounded-lg transition shadow-lg">Gå vidare</button>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        ${activePlayers.map(p => {
+                            const ans = p.answers?.[sessionData.currentBoardIndex];
+                            if(!ans) return ''; // Svarade inte
+                            
+                            let statusHtml = '';
+                            if(ans.correct === true) statusHtml = `<span class="text-emerald-400 font-bold">+${ans.points}p</span>`;
+                            else if(ans.correct === false) statusHtml = `<span class="text-red-400 font-bold">Fel (0p)</span>`;
+                            else statusHtml = `
+                                <button onclick="markAnswer('${p.id}', true)" class="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded hover:bg-emerald-500/40 text-sm">Rätt</button>
+                                <button onclick="markAnswer('${p.id}', false)" class="bg-red-500/20 text-red-400 px-3 py-1 rounded hover:bg-red-500/40 text-sm">Fel</button>
+                            `;
+
+                            return `
+                                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                                    <div>
+                                        <p class="font-bold text-lg">${p.name}</p>
+                                        <p class="text-sm text-slate-400">Svar: <span class="text-white font-semibold">"${ans.text}"</span> (låst på ${POINTS[ans.clueIndex]}p)</p>
+                                    </div>
+                                    <div class="flex gap-2">
+                                        ${statusHtml}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `;
+            }
+            else if (sessionData.gameState === 'finished') {
+                // Calculate team scores (average of player scores)
+                const teamScores = sessionData.teams.map(team => {
+                    const tPlayers = activePlayers.filter(p => p.teamId === team.id);
+                    if(tPlayers.length === 0) return { ...team, score: 0 };
+                    
+                    const totalPoints = tPlayers.reduce((sum, p) => {
+                        const pScore = Object.values(p.answers || {}).reduce((s, a) => s + (a.points || 0), 0);
+                        return sum + pScore;
+                    }, 0);
+                    
+                    return { ...team, score: Math.round((totalPoints / tPlayers.length) * 10) / 10 };
+                }).sort((a,b) => b.score - a.score);
+
+                html += `
+                    <div class="text-center mb-12">
+                        <h2 class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-4">Spelet är slut!</h2>
+                        <p class="text-slate-400">Poäng baseras på lagens snittpoäng.</p>
+                    </div>
+                    <div class="max-w-2xl mx-auto space-y-4">
+                        ${teamScores.map((t, i) => `
+                            <div class="flex items-center justify-between bg-slate-800 p-6 rounded-xl border border-slate-700 ${i===0 ? 'ring-2 ring-amber-500' : ''}">
+                                <div class="flex items-center gap-4">
+                                    <span class="text-3xl font-black ${i===0 ? 'text-amber-500' : 'text-slate-500'}">#${i+1}</span>
+                                    <div>
+                                        <h3 class="text-xl font-bold" style="color: ${t.color}">${t.name}</h3>
+                                        <p class="text-sm text-slate-400">${activePlayers.filter(p=>p.teamId === t.id).map(p=>p.name).join(', ')}</p>
+                                    </div>
+                                </div>
+                                <span class="text-3xl font-black text-white">${t.score} p</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            appEl.innerHTML = html;
+        }
+    </script>
+</body>
+</html>
