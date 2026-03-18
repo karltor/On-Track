@@ -48,7 +48,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-        import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+        // Lade till writeBatch här för säkerhetsuppdelningen!
+        import { getFirestore, doc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
@@ -67,7 +68,7 @@
         const STORAGE_KEY = 'pa_sparet_saved_boards';
         let boards = [];
         let selectedIndex = null;
-        let editData = null; // Används för formuläret när man skapar/redigerar
+        let editData = null; 
 
         // Ladda data från LocalStorage
         function loadBoards() {
@@ -88,7 +89,7 @@
         window.setView = (view, index = null) => {
             const mainEl = document.getElementById('mainContent');
             selectedIndex = index;
-            renderSidebar(); // Uppdatera aktiv klass
+            renderSidebar(); 
             
             if (view === 'welcome') {
                 mainEl.innerHTML = `
@@ -182,7 +183,7 @@
         }
 
         // ----------------------------------------------------
-        // REDIGERA / SKAPA LOGIK (Dynamiskt Formulär)
+        // REDIGERA / SKAPA LOGIK
         // ----------------------------------------------------
 
         window.createNewBoard = () => {
@@ -191,13 +192,11 @@
         };
 
         window.editBoard = (index) => {
-            // Skapa en djupkopia så vi inte redigerar originalet förrän vi sparar
             editData = JSON.parse(JSON.stringify(boards[index]));
-            editData.editIndex = index; // Håll koll på vilket index vi redigerar
+            editData.editIndex = index; 
             setView('edit');
         };
 
-        // En funktion som bygger upp formuläret baserat på editData
         window.renderEditForm = () => {
             const mainEl = document.getElementById('mainContent');
             
@@ -257,7 +256,7 @@
 
         window.addQuestion = () => {
             editData.boards.push({ answer: "", clues: ["","","","",""] });
-            renderEditForm(); // Bygg om DOM för att visa nya frågan
+            renderEditForm();
         };
 
         window.removeQuestion = (index) => {
@@ -276,18 +275,15 @@
         };
 
         window.saveEdit = () => {
-            // Läs in titeln (ifall onchange inte triggats innan klick)
             editData.title = document.getElementById('editTitle').value || "Namnlöst Spel";
             
             if (editData.editIndex !== undefined) {
-                // Uppdatera existerande
                 let i = editData.editIndex;
                 delete editData.editIndex;
                 boards[i] = editData;
                 saveBoards();
                 setView('view', i);
             } else {
-                // Skapa ny
                 boards.push(editData);
                 saveBoards();
                 setView('view', boards.length - 1);
@@ -325,15 +321,22 @@
             }
         };
 
+        // STARTA SESSION MED SÄKERHET OCH 4-SIFFRIG PIN!
         window.startSession = async (index) => {
             const selectedBoard = boards[index];
+            
+            // 4-siffrig PIN-kod
             const pin = Math.floor(1000 + Math.random() * 9000).toString();
             const adminToken = Math.random().toString(36).substring(2, 15);
+
+            // SÄKERHET: Vi separerar ledtrådar (offentliga) från svaren (hemliga)
+            const publicBoards = selectedBoard.boards.map(b => ({ clues: b.clues }));
+            const secretAnswers = selectedBoard.boards.map(b => b.answer);
 
             const sessionData = {
                 adminToken: adminToken,
                 gameState: "lobby",
-                boards: selectedBoard.boards,
+                boards: publicBoards, // Eleverna kan bara hämta detta!
                 currentBoardIndex: 0,
                 currentClueIndex: 0,
                 teams: [],
@@ -341,7 +344,13 @@
             };
 
             try {
-                await setDoc(doc(db, "sessions", pin), sessionData);
+                const batch = writeBatch(db);
+                // Offentligt dokument
+                batch.set(doc(db, "sessions", pin), sessionData);
+                // Hemligt dokument
+                batch.set(doc(db, "sessions", `${pin}_${adminToken}`), { answers: secretAnswers });
+                await batch.commit();
+                
                 localStorage.setItem(`pa_sparet_admin_${pin}`, adminToken);
                 window.location.href = `host.html?session=${pin}`;
             } catch (error) {
