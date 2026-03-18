@@ -61,10 +61,12 @@
             if (docSnap.exists()) {
                 sessionData = docSnap.data();
                 
+                // FRYS SPELET & STÄDA DATABASEN
                 if (sessionData.gameState === 'finished') {
                     finalResults = calculateFinalResults();
-                    render(); 
+                    render(); // Rendera sista skärmen från fryst data
 
+                    // Vänta 5 sek, sen Ghost-städar vi databasen!
                     setTimeout(async () => {
                         try {
                             const batch = writeBatch(db);
@@ -72,6 +74,7 @@
                             batch.delete(doc(db, "sessions", sessionPin));
                             batch.delete(doc(db, "sessions", `${sessionPin}_${adminToken}`));
                             await batch.commit();
+                            console.log("Databasen städades tyst i bakgrunden.");
                         } catch(e) {}
                     }, 5000);
                     return;
@@ -88,6 +91,7 @@
                 const p = { id: docSnap.id, ...docSnap.data() };
                 playersData.push(p);
 
+                // Auto-rätta exakta svar
                 if (sessionData && sessionData.gameState === 'playing' && secretAnswers.length > 0) {
                     const ans = p.answers?.[sessionData.currentBoardIndex];
                     const correctAns = secretAnswers[sessionData.currentBoardIndex].trim().toLowerCase();
@@ -180,12 +184,12 @@
             const ans = p.answers[sessionData.currentBoardIndex];
             let points = 0;
             if (status === true) points = POINTS[ans.clueIndex];
-            else if (status === 'minus') points = -5;
+            else if (status === 'minus') points = -5; // Straffpoäng!
 
             await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), {
                 [`answers.${sessionData.currentBoardIndex}.correct`]: status === true,
                 [`answers.${sessionData.currentBoardIndex}.points`]: points,
-                [`answers.${sessionData.currentBoardIndex}.status`]: status
+                [`answers.${sessionData.currentBoardIndex}.status`]: status 
             });
         };
 
@@ -199,17 +203,13 @@
 
         window.banPlayer = async (playerId) => { if(confirm("Kick/Banna denna spelare?")) await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { banned: true }); };
 
-        window.addDummyPlayers = async () => {
-            const batch = writeBatch(db);
-            for(let i=1; i<=30; i++) {
-                const ref = doc(collection(db, "sessions", sessionPin, "players"));
-                batch.set(ref, { name: "Elev " + i, teamId: null, banned: false, answers: {}, lastActive: Date.now() });
-            }
-            await batch.commit();
+        window.endAndCleanup = async () => {
+            window.location.href = "index.html"; 
         };
 
         // --- RENDER ---
         function render() {
+            // Om vi har ett fryst slutresultat
             if (finalResults) {
                 const appEl = document.getElementById('app');
                 appEl.innerHTML = `
@@ -244,6 +244,7 @@
             const now = Date.now();
             let html = '';
 
+            // Lobbyns unika header eller en slimmad i spelläge
             if (sessionData.gameState !== 'lobby') {
                 html += `<div class="absolute top-4 left-4 bg-slate-100 text-slate-400 px-3 py-1 rounded-md text-xs font-bold border border-slate-200">PIN: ${sessionPin}</div>`;
             } else {
@@ -252,7 +253,7 @@
                         <div>
                             <p class="text-slate-500 font-bold uppercase tracking-wider text-sm mb-1">Gå till spelet via</p>
                             <div class="flex items-center gap-2 mt-1">
-                                <input type="text" readonly value="${playUrl}" class="bg-white border border-slate-300 font-medium text-sm px-3 py-1.5 w-64 rounded-md text-slate-700">
+                                <input type="text" readonly value="${playUrl}" class="bg-white border border-slate-300 font-medium text-sm px-3 py-1.5 w-64 rounded-md text-slate-700 outline-none">
                                 <button id="copyBtn" onclick="copyPlayUrl()" class="px-4 py-1.5 bg-white border border-slate-300 rounded-md shadow-sm text-sm font-bold hover:bg-slate-50 transition">Kopiera Elevlänk</button>
                             </div>
                         </div>
@@ -268,28 +269,34 @@
                 const unassigned = activePlayers.filter(p => !p.teamId);
                 html += `
                     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                        <div class="lg:col-span-1 bg-white p-4 rounded-xl border border-slate-300 shadow-sm flex flex-col"
-                             ondrop="drop(event, 'null')" ondragover="allowDrop(event)" ondragleave="leaveDrop(event)">
-                            <div class="flex justify-between items-center mb-3">
-                                <h2 class="font-black text-lg">Väntrum (${unassigned.length})</h2>
-                                <button onclick="addDummyPlayers()" class="text-[10px] bg-slate-100 border border-slate-200 hover:bg-slate-200 px-2 py-1 rounded font-bold shadow-sm">+30 Botar</button>
+                        <div class="lg:col-span-1 flex flex-col gap-4">
+                            <div class="bg-white p-4 rounded-xl border border-slate-300 shadow-sm">
+                                <h2 class="font-black text-lg mb-3">Laginställningar</h2>
+                                <label class="block text-xs font-bold text-slate-500 mb-1">Max elever per lag</label>
+                                <div class="flex gap-2">
+                                    <input type="number" id="teamSize" value="3" class="w-16 bg-slate-50 border border-slate-300 rounded p-2 text-sm font-bold outline-none focus:border-amber-500 text-center">
+                                    <button onclick="randomizeTeams()" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded transition text-sm">Slumpa Lagen</button>
+                                </div>
                             </div>
-                            <p class="text-xs text-slate-400 mb-3">Dra och släpp elever för att byta lag.</p>
-                            <div class="space-y-1.5 mb-6 flex-1 overflow-y-auto pr-1">
-                                ${unassigned.map(p => {
-                                    const isOnline = (now - (p.lastActive || now)) < 15000;
-                                    return `
-                                    <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center bg-slate-50 hover:bg-slate-100 p-2 rounded-md border border-slate-200 text-sm cursor-grab active:cursor-grabbing ${isOnline ? '' : 'opacity-50'}">
-                                        <span class="font-bold truncate pointer-events-none ${isOnline ? '' : 'line-through text-slate-400'}" title="${isOnline ? '' : 'Offline'}">${p.name}</span>
-                                        <button onclick="banPlayer('${p.id}')" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 rounded font-bold">&times;</button>
-                                    </div>
-                                    `;
-                                }).join('') || '<p class="text-slate-400 text-sm italic">Inga väntande elever...</p>'}
-                            </div>
-                            <div class="pt-4 border-t border-slate-200">
-                                <label class="block text-xs font-bold text-slate-500 mb-1">Önskad maxstorlek per lag</label>
-                                <input type="number" id="teamSize" value="3" class="w-full bg-slate-50 border border-slate-300 rounded p-2 text-sm font-bold mb-2 outline-none focus:border-amber-500">
-                                <button onclick="randomizeTeams()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded transition text-sm">Slumpa Lagen</button>
+
+                            <div class="bg-white p-4 rounded-xl border border-slate-300 shadow-sm flex flex-col flex-1 min-h-[300px]"
+                                 ondrop="drop(event, 'null')" ondragover="allowDrop(event)" ondragleave="leaveDrop(event)">
+                                <div class="flex justify-between items-center mb-2">
+                                    <h2 class="font-black text-lg">Väntrum (${unassigned.length})</h2>
+                                </div>
+                                <p class="text-xs text-slate-400 mb-3">Dra och släpp elever för att byta lag.</p>
+                                
+                                <div class="space-y-1.5 flex-1 overflow-y-auto pr-1">
+                                    ${unassigned.map(p => {
+                                        const isOnline = (now - (p.lastActive || now)) < 15000;
+                                        return `
+                                        <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center bg-slate-50 hover:bg-slate-100 p-2 rounded-md border border-slate-200 text-sm cursor-grab active:cursor-grabbing ${isOnline ? '' : 'opacity-50'}">
+                                            <span class="font-bold truncate pointer-events-none ${isOnline ? '' : 'line-through text-slate-400'}" title="${isOnline ? '' : 'Offline'}">${p.name}</span>
+                                            <button onclick="banPlayer('${p.id}')" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 rounded font-bold">&times;</button>
+                                        </div>
+                                        `;
+                                    }).join('') || '<p class="text-slate-400 text-sm italic">Inga väntande elever...</p>'}
+                                </div>
                             </div>
                         </div>
 
@@ -348,7 +355,7 @@
                             ${sessionData.teams.map(team => {
                                 const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
                                 
-                                // HEARTBEAT LOGIC: Räkna bara förväntade svar om spelaren är online ELLER redan har låst
+                                // Räkna bara förväntade svar om spelaren är online ELLER redan har låst
                                 const expectedPlayers = teamPlayers.filter(p => {
                                     const isOnline = (now - (p.lastActive || 0)) < 15000;
                                     const hasLocked = p.answers?.[sessionData.currentBoardIndex]?.locked;
@@ -402,6 +409,7 @@
                                             else if(ans.correct === false && ans.status !== 'minus') actions = `<span class="text-red-500 font-bold px-2">0p</span>`;
                                             else if(ans.status === 'minus') actions = `<span class="text-slate-800 font-bold px-2">-5p</span>`;
                                             
+                                            // Knappar för läraren att korrigera
                                             actions += `
                                                 <div class="flex gap-1 ml-2 border-l border-slate-200 pl-2">
                                                     <button onclick="markAnswer('${p.id}', true)" title="Ge Rätt" class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-sm hover:bg-emerald-200 transition">🟢</button>
