@@ -6,6 +6,7 @@
     <title>På Rätt Spår - Admin</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* Custom scrollbar för en snyggare känsla */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #f1f5f9; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
@@ -62,12 +63,14 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
 
+        // App State
         const STORAGE_KEY = 'pa_sparet_saved_boards';
         const DEFAULTS_KEY = 'pa_sparet_imported_defaults';
         let boards = [];
         let selectedIndex = null;
         let editData = null; 
 
+        // Ladda data från LocalStorage
         function loadBoards() {
             try { boards = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } 
             catch { boards = []; }
@@ -79,9 +82,13 @@
             renderSidebar();
         }
 
+        // Auto-importera standardpaket
         async function loadDefaultPackages() {
             let imported = JSON.parse(localStorage.getItem(DEFAULTS_KEY)) || [];
-            const filesToCheck = ['paket1.json', 'paket2.json']; 
+            
+            // FILNAMN SOM KODEN LETAR EFTER I ROOT
+            // Lägg dina färdiga paket som paket1.json, paket2.json i din Github-repo
+            const filesToCheck = ['paket1.json', 'paket2.json', 'paket3.json']; 
             let newlyImported = false;
 
             for (const file of filesToCheck) {
@@ -91,15 +98,32 @@
                         if (response.ok) {
                             const data = await response.json();
                             const packages = Array.isArray(data) ? data : [data];
-                            packages.forEach(pkg => { if (pkg.title && pkg.boards) { boards.push(pkg); newlyImported = true; } });
+                            
+                            packages.forEach(pkg => {
+                                if (pkg.title && pkg.boards) {
+                                    boards.push(pkg);
+                                    newlyImported = true;
+                                }
+                            });
+                            // Markera som inläst så den aldrig läses in igen om läraren raderar den
                             imported.push(file); 
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        // Tyst ignorering om filen inte finns
+                    }
                 }
             }
-            if (newlyImported) { saveBoards(); localStorage.setItem(DEFAULTS_KEY, JSON.stringify(imported)); }
+
+            if (newlyImported) {
+                saveBoards(); 
+                localStorage.setItem(DEFAULTS_KEY, JSON.stringify(imported));
+            }
         }
 
+        // ----------------------------------------------------
+        // UI RENDERING
+        // ----------------------------------------------------
+        
         window.setView = (view, index = null) => {
             const mainEl = document.getElementById('mainContent');
             selectedIndex = index;
@@ -107,12 +131,10 @@
             
             if (view === 'welcome') {
                 mainEl.innerHTML = `
-                    <div class="h-full flex flex-col items-center justify-center text-slate-400 text-center">
-                        <div class="w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-6">
-                            <svg class="w-12 h-12 text-slate-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" x2="16.65" y1="21" y2="16.65"></line></svg>
-                        </div>
+                    <div class="h-full flex flex-col items-center justify-center text-slate-400">
+                        <svg class="w-16 h-16 mb-4 text-slate-200" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" x2="16.65" y1="21" y2="16.65"></line></svg>
                         <h2 class="text-2xl font-bold text-slate-700 mb-2">Välkommen till På Rätt Spår</h2>
-                        <p>Välj ett paket till vänster eller skapa ett nytt.</p>
+                        <p>Klicka på ett sparat bräde till vänster för att se inställningar och börja spela,<br>eller skapa ett nytt bräde uppe till höger.</p>
                     </div>
                 `;
             } 
@@ -120,10 +142,11 @@
                 mainEl.innerHTML = `
                     <div class="max-w-3xl mx-auto bg-white p-8 rounded-xl shadow-sm border border-slate-200">
                         <h2 class="text-3xl font-black text-slate-800 mb-2">Importera från JSON</h2>
-                        <p class="text-slate-500 mb-6">Klistra in koden här för att lägga till spelet.</p>
-                        <textarea id="jsonInput" class="w-full h-64 bg-slate-50 border border-slate-200 rounded-lg p-4 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 mb-4" placeholder='{"title": "...", "boards": [...]}'></textarea>
-                        <div class="flex items-center justify-end">
-                            <button onclick="handleImport()" class="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm transition">Spara paket</button>
+                        <p class="text-slate-500 mb-6">Klistra in koden du fått av en kollega för att lägga till spelet i ditt bibliotek.</p>
+                        <textarea id="jsonInput" class="w-full h-64 bg-slate-50 border border-slate-200 rounded-lg p-4 font-mono text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent mb-4" placeholder='{"title": "...", "boards": [...]}'></textarea>
+                        <div class="flex items-center justify-between">
+                            <p id="importMsg" class="text-sm font-semibold hidden"></p>
+                            <button onclick="handleImport()" class="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-lg shadow-sm transition">Importera och spara</button>
                         </div>
                     </div>
                 `;
@@ -133,11 +156,15 @@
                 let questionsHtml = b.boards.map((q, i) => `
                     <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                         <h4 class="text-xs font-bold text-slate-400 uppercase mb-4 tracking-wider">Fråga ${i+1}</h4>
-                        <div class="space-y-2 mb-6">
-                            ${q.clues.map((clue, ci) => `<div class="flex gap-4"><span class="font-bold text-amber-500 w-8 text-right">${[10,8,6,4,2][ci]}p</span> <span class="text-slate-700">${clue}</span></div>`).join('')}
+                        <div class="space-y-3 mb-6">
+                            <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">10p</span> <span class="text-slate-700">${q.clues[0]}</span></div>
+                            <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">8p</span> <span class="text-slate-700">${q.clues[1]}</span></div>
+                            <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">6p</span> <span class="text-slate-700">${q.clues[2]}</span></div>
+                            <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">4p</span> <span class="text-slate-700">${q.clues[3]}</span></div>
+                            <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">2p</span> <span class="text-slate-700">${q.clues[4]}</span></div>
                         </div>
                         <div class="bg-emerald-50 text-emerald-800 p-4 rounded-lg border border-emerald-100 flex items-center justify-between">
-                            <span class="text-sm font-semibold uppercase text-emerald-600">Svar</span>
+                            <span class="text-sm font-semibold uppercase tracking-wider text-emerald-600">Svar</span>
                             <span class="font-black text-xl">${q.answer}</span>
                         </div>
                     </div>
@@ -151,100 +178,249 @@
                                 <p class="text-slate-500 font-medium">${b.boards.length} frågor i detta paket</p>
                             </div>
                             <div class="flex gap-3">
-                                <button onclick="editBoard(${index})" class="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg font-semibold transition">Redigera</button>
-                                <button onclick="startSession(${index})" class="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold transition shadow-sm flex items-center gap-2 text-lg">Starta Spel</button>
+                                <button onclick="exportBoard(${index})" class="px-4 py-2 bg-white border border-slate-200 text-blue-600 hover:bg-slate-50 rounded-lg font-semibold transition shadow-sm flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" x2="12" y1="2" y2="15"></line></svg>
+                                    Exportera
+                                </button>
+                                <button onclick="editBoard(${index})" class="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg font-semibold transition shadow-sm">Redigera</button>
+                                <button onclick="startSession(${index})" class="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-bold transition shadow-sm flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                    Starta Spel
+                                </button>
                             </div>
                         </div>
-                        <div class="space-y-6">${questionsHtml}</div>
-                        <div class="mt-12 text-center text-slate-300">———</div>
+                        <div class="space-y-6">
+                            ${questionsHtml}
+                        </div>
+                        <div class="mt-12 text-center">
+                            <button onclick="deleteBoard(${index})" class="text-red-500 hover:text-red-700 text-sm font-semibold transition">Radera detta spelbräde</button>
+                        </div>
                     </div>
                 `;
             }
-            else if (view === 'edit') { renderEditForm(); }
+            else if (view === 'edit') {
+                renderEditForm();
+            }
         };
 
+        // EXPORT FUNCTION
         window.exportBoard = (index) => {
-            const data = JSON.stringify(boards[index], null, 2);
-            navigator.clipboard.writeText(data);
-            alert("Paketets JSON-kod har kopierats till urklipp!");
+            const dataToExport = boards[index];
+            const jsonString = JSON.stringify(dataToExport, null, 2);
+            navigator.clipboard.writeText(jsonString).then(() => {
+                alert("Kopierat till urklipp! Du kan nu klistra in JSON-koden.");
+            }).catch(err => {
+                console.error("Kunde inte kopiera text", err);
+                alert("Kunde inte kopiera automatiskt. Kolla konsolen.");
+            });
         };
 
         function renderSidebar() {
             const listEl = document.getElementById('boardsList');
             listEl.innerHTML = '';
+            
             boards.forEach((board, index) => {
                 const isActive = index === selectedIndex;
-                const item = document.createElement('div');
-                item.className = `group relative w-full text-left p-3 rounded-lg border transition-all flex flex-col gap-1 ${isActive ? 'bg-amber-50 border-amber-200 shadow-sm' : 'bg-transparent border-transparent hover:bg-slate-100'}`;
+                const activeClass = isActive ? 'bg-amber-50 border-amber-200' : 'bg-transparent border-transparent hover:bg-slate-100';
+                
+                const item = document.createElement('button');
+                item.onclick = () => setView('view', index);
+                item.className = `w-full text-left p-3 rounded-lg border transition-colors flex items-center justify-between ${activeClass}`;
                 item.innerHTML = `
-                    <div class="flex justify-between items-start cursor-pointer" onclick="setView('view', ${index})">
-                        <h3 class="font-bold text-sm ${isActive ? 'text-amber-900' : 'text-slate-700'} leading-tight pr-2">${board.title}</h3>
-                        <span class="text-[10px] font-bold ${isActive ? 'text-amber-600' : 'text-slate-400'}">${board.boards.length}</span>
+                    <div class="truncate pr-4">
+                        <h3 class="font-bold text-sm ${isActive ? 'text-amber-900' : 'text-slate-700'} truncate">${board.title}</h3>
                     </div>
-                    <div class="flex gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button onclick="exportBoard(${index})" class="text-[10px] font-bold text-blue-500 hover:text-blue-700 uppercase tracking-tighter">Exportera</button>
-                        <button onclick="deleteBoard(${index})" class="text-[10px] font-bold text-red-400 hover:text-red-600 uppercase tracking-tighter">Radera</button>
-                    </div>
+                    <span class="text-xs font-semibold ${isActive ? 'text-amber-600' : 'text-slate-400'} whitespace-nowrap">${board.boards.length} st</span>
                 `;
                 listEl.appendChild(item);
             });
         }
 
-        window.createNewBoard = () => { editData = { title: "Nytt Spelbräde", boards: [{ answer: "", clues: ["","","","",""] }] }; setView('edit'); };
-        window.editBoard = (index) => { editData = JSON.parse(JSON.stringify(boards[index])); editData.editIndex = index; setView('edit'); };
-        window.updateData = (qIndex, field, value, clueIndex) => { if (field === 'answer') editData.boards[qIndex].answer = value; else editData.boards[qIndex].clues[clueIndex] = value; };
-        window.addQuestion = () => { editData.boards.push({ answer: "", clues: ["","","","",""] }); renderEditForm(); };
-        window.removeQuestion = (index) => { if(confirm("Ta bort frågan?")) { editData.boards.splice(index, 1); renderEditForm(); } };
-        window.cancelEdit = () => editData.editIndex !== undefined ? setView('view', editData.editIndex) : setView('welcome');
-        window.saveEdit = () => { 
-            editData.title = document.getElementById('editTitle').value || "Namnlöst Spel";
-            if (editData.editIndex !== undefined) { let i = editData.editIndex; delete editData.editIndex; boards[i] = editData; setView('view', i); } 
-            else { boards.push(editData); setView('view', boards.length - 1); }
-            saveBoards();
+        // ----------------------------------------------------
+        // REDIGERA / SKAPA LOGIK
+        // ----------------------------------------------------
+
+        window.createNewBoard = () => {
+            editData = { title: "Nytt Spelbräde", boards: [{ answer: "", clues: ["","","","",""] }] };
+            setView('edit');
+        };
+
+        window.editBoard = (index) => {
+            editData = JSON.parse(JSON.stringify(boards[index]));
+            editData.editIndex = index; 
+            setView('edit');
         };
 
         window.renderEditForm = () => {
             const mainEl = document.getElementById('mainContent');
+            
             let questionsHtml = editData.boards.map((q, qIndex) => `
-                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-6">
-                    <div class="flex justify-between items-center mb-4"><h4 class="text-sm font-black text-slate-800 uppercase">Fråga ${qIndex + 1}</h4><button onclick="removeQuestion(${qIndex})" class="text-red-500 text-xs font-bold uppercase">Radera</button></div>
-                    <input type="text" value="${q.answer}" onchange="updateData(${qIndex}, 'answer', this.value)" class="w-full bg-slate-50 border border-slate-200 rounded p-3 mb-4 font-bold text-lg" placeholder="Rätt svar">
+                <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative">
+                    <div class="flex justify-between items-center mb-4">
+                        <h4 class="text-sm font-bold text-slate-800">Fråga ${qIndex + 1}</h4>
+                        <button onclick="removeQuestion(${qIndex})" class="text-red-500 hover:text-red-700 text-sm font-semibold">Ta bort</button>
+                    </div>
+                    
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Rätt Svar</label>
+                    <input type="text" value="${q.answer}" onchange="updateData(${qIndex}, 'answer', this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-md p-3 mb-6 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="T.ex. Paris">
+                    
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ledtrådar</label>
                     <div class="space-y-2">
-                        ${[10,8,6,4,2].map((p, i) => `<div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">${p}p</span> <input type="text" value="${q.clues[i]}" onchange="updateData(${qIndex}, 'clue', this.value, ${i})" class="flex-1 bg-slate-50 border border-slate-200 rounded p-2 text-sm" placeholder="Ledtråd..."></div>`).join('')}
+                        <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">10p</span> <input type="text" value="${q.clues[0]}" onchange="updateData(${qIndex}, 'clue', this.value, 0)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="Svåraste ledtråden..."></div>
+                        <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">8p</span> <input type="text" value="${q.clues[1]}" onchange="updateData(${qIndex}, 'clue', this.value, 1)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="Nästa ledtråd..."></div>
+                        <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">6p</span> <input type="text" value="${q.clues[2]}" onchange="updateData(${qIndex}, 'clue', this.value, 2)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="..."></div>
+                        <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">4p</span> <input type="text" value="${q.clues[3]}" onchange="updateData(${qIndex}, 'clue', this.value, 3)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="..."></div>
+                        <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">2p</span> <input type="text" value="${q.clues[4]}" onchange="updateData(${qIndex}, 'clue', this.value, 4)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="Lättaste ledtråden..."></div>
                     </div>
                 </div>
             `).join('');
-            mainEl.innerHTML = `<div class="max-w-3xl mx-auto pb-20"><div class="flex justify-between items-center mb-8 sticky top-0 bg-slate-50/90 backdrop-blur py-4 z-10 border-b border-slate-200"><div class="flex-1 mr-8"><input type="text" id="editTitle" value="${editData.title}" class="w-full bg-transparent text-3xl font-black text-slate-800 focus:outline-none" placeholder="Paketnamn"></div><div class="flex gap-2"><button onclick="cancelEdit()" class="px-4 py-2 font-bold text-slate-400">Avbryt</button><button onclick="saveEdit()" class="px-6 py-2 bg-emerald-500 text-white rounded-lg font-bold">Spara</button></div></div>${questionsHtml}<button onclick="addQuestion()" class="w-full py-4 border-2 border-dashed border-slate-300 text-slate-400 font-bold rounded-xl hover:border-amber-400 hover:text-amber-500">+ Lägg till fråga</button></div>`;
+
+            mainEl.innerHTML = `
+                <div class="max-w-3xl mx-auto pb-20">
+                    <div class="flex justify-between items-center mb-8 sticky top-0 bg-slate-50/90 backdrop-blur py-4 z-10 border-b border-slate-200">
+                        <div class="flex-1 mr-8">
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Paketets Namn</label>
+                            <input type="text" id="editTitle" value="${editData.title}" onkeyup="editData.title = this.value" onchange="editData.title = this.value" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none" placeholder="Namn på spelbrädet...">
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="cancelEdit()" class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-md font-semibold transition">Avbryt</button>
+                            <button onclick="saveEdit()" class="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold transition shadow-sm">Spara Ändringar</button>
+                        </div>
+                    </div>
+                    
+                    <div class="space-y-6">
+                        ${questionsHtml}
+                    </div>
+                    
+                    <button onclick="addQuestion()" class="mt-6 w-full py-4 border-2 border-dashed border-slate-300 text-slate-500 hover:border-amber-500 hover:text-amber-600 font-bold rounded-xl transition flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"></line><line x1="5" x2="19" y1="12" y2="12"></line></svg>
+                        Lägg till en till fråga
+                    </button>
+                </div>
+            `;
         };
+
+        window.updateData = (qIndex, field, value, clueIndex) => {
+            if (field === 'answer') {
+                editData.boards[qIndex].answer = value;
+            } else if (field === 'clue') {
+                editData.boards[qIndex].clues[clueIndex] = value;
+            }
+        };
+
+        window.addQuestion = () => {
+            editData.boards.push({ answer: "", clues: ["","","","",""] });
+            renderEditForm(); // Bygg om DOM för att visa nya frågan
+        };
+
+        window.removeQuestion = (index) => {
+            if(confirm("Är du säker på att du vill ta bort frågan?")) {
+                editData.boards.splice(index, 1);
+                renderEditForm();
+            }
+        };
+
+        window.cancelEdit = () => {
+            if (editData.editIndex !== undefined) {
+                setView('view', editData.editIndex);
+            } else {
+                setView('welcome');
+            }
+        };
+
+        window.saveEdit = () => {
+            // Läs in titeln (ifall onchange inte triggats innan klick)
+            editData.title = document.getElementById('editTitle').value || "Namnlöst Spel";
+            
+            if (editData.editIndex !== undefined) {
+                // Uppdatera existerande
+                let i = editData.editIndex;
+                delete editData.editIndex;
+                boards[i] = editData;
+                saveBoards();
+                setView('view', i);
+            } else {
+                // Skapa ny
+                boards.push(editData);
+                saveBoards();
+                setView('view', boards.length - 1);
+            }
+        };
+
+        // ----------------------------------------------------
+        // IMPORT / EXPORT / ACTIONS
+        // ----------------------------------------------------
 
         window.handleImport = () => {
+            const input = document.getElementById('jsonInput').value;
+            const msgEl = document.getElementById('importMsg');
+            msgEl.classList.remove('hidden');
+
             try {
-                const parsed = JSON.parse(document.getElementById('jsonInput').value);
-                boards.push(parsed); saveBoards(); setView('view', boards.length - 1);
-            } catch (e) { alert("Ogiltig JSON"); }
+                const parsed = JSON.parse(input);
+                if(!parsed.title || !parsed.boards) throw new Error("JSON saknar 'title' eller 'boards'.");
+                
+                boards.push(parsed);
+                saveBoards();
+                
+                setView('view', boards.length - 1);
+            } catch (e) {
+                msgEl.textContent = "Ogiltig JSON: " + e.message;
+                msgEl.className = "text-sm font-semibold text-red-500 block";
+            }
         };
 
-        window.deleteBoard = (index) => { if(confirm("Radera hela paketet?")) { boards.splice(index, 1); saveBoards(); setView('welcome'); } };
+        window.deleteBoard = (index) => {
+            if(confirm("Vill du verkligen radera hela paketet?")) {
+                boards.splice(index, 1);
+                saveBoards();
+                setView('welcome');
+            }
+        };
 
+        // STARTA SESSION MED SÄKERHET OCH 4-SIFFRIG PIN!
         window.startSession = async (index) => {
             const selectedBoard = boards[index];
+            
+            // 4-siffrig PIN-kod
             const pin = Math.floor(1000 + Math.random() * 9000).toString();
             const adminToken = Math.random().toString(36).substring(2, 15);
+
+            // SÄKERHET: Vi separerar ledtrådar (offentliga) från svaren (hemliga)
             const publicBoards = selectedBoard.boards.map(b => ({ clues: b.clues }));
             const secretAnswers = selectedBoard.boards.map(b => b.answer);
+
+            const sessionData = {
+                adminToken: adminToken,
+                gameState: "lobby",
+                boards: publicBoards, // Eleverna kan bara hämta detta!
+                currentBoardIndex: 0,
+                currentClueIndex: 0,
+                teams: [],
+                createdAt: new Date().toISOString()
+            };
+
             try {
                 const batch = writeBatch(db);
-                batch.set(doc(db, "sessions", pin), { adminToken, gameState: "lobby", boards: publicBoards, currentBoardIndex: 0, currentClueIndex: 0, teams: [], createdAt: new Date().toISOString() });
+                // Offentligt dokument
+                batch.set(doc(db, "sessions", pin), sessionData);
+                // Hemligt dokument
                 batch.set(doc(db, "sessions", `${pin}_${adminToken}`), { answers: secretAnswers });
                 await batch.commit();
+                
                 localStorage.setItem(`pa_sparet_admin_${pin}`, adminToken);
                 window.location.href = `host.html?session=${pin}`;
-            } catch (error) { alert("Firebase Error"); }
+            } catch (error) {
+                console.error("Error creating session: ", error);
+                alert("Kunde inte starta sessionen mot Firebase.");
+            }
         };
 
+        // Start
         loadBoards();
-        loadDefaultPackages();
+        loadDefaultPackages(); // Laddar paket i bakgrunden första gången
         setView('welcome');
+
     </script>
 </body>
 </html>
