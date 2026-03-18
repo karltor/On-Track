@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>På Rätt Spår - Host</title>
+    <title>På Rätt Spår - Lärarvy</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-slate-900 text-white min-h-screen font-sans">
-    <div id="app" class="max-w-5xl mx-auto p-8 pb-24">
+<body class="bg-slate-100 text-slate-900 min-h-screen font-sans">
+    <div id="app" class="max-w-6xl mx-auto p-8 pb-24">
         <div class="flex items-center justify-center h-64">
-            <p class="text-slate-400 animate-pulse">Laddar session...</p>
+            <p class="text-slate-500 font-bold animate-pulse text-xl">Laddar session...</p>
         </div>
     </div>
 
@@ -20,10 +20,7 @@
         const app = initializeApp({
             apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
             authDomain: "on-track-d77d0.firebaseapp.com",
-            projectId: "on-track-d77d0",
-            storageBucket: "on-track-d77d0.firebasestorage.app",
-            messagingSenderId: "515234485983",
-            appId: "1:515234485983:web:daa02d8bbc09e30a65fb6a"
+            projectId: "on-track-d77d0"
         });
         const db = getFirestore(app);
 
@@ -39,6 +36,7 @@
         let sessionData = null;
         let playersData = [];
         const POINTS = [10, 8, 6, 4, 2];
+        const playUrl = window.location.href.replace('host.html', 'play.html');
 
         // Lyssna på Session
         onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
@@ -61,6 +59,17 @@
         });
 
         // --- ACTIONS ---
+        window.copyPlayUrl = () => {
+            navigator.clipboard.writeText(playUrl);
+            const btn = document.getElementById('copyBtn');
+            btn.innerText = "Kopierad!";
+            btn.classList.add("bg-emerald-100", "text-emerald-700", "border-emerald-300");
+            setTimeout(() => {
+                btn.innerText = "Kopiera länk";
+                btn.classList.remove("bg-emerald-100", "text-emerald-700", "border-emerald-300");
+            }, 2000);
+        };
+
         window.randomizeTeams = async () => {
             const teamSize = parseInt(document.getElementById('teamSize').value) || 3;
             const activePlayers = playersData.filter(p => !p.banned);
@@ -68,8 +77,14 @@
             
             const numTeams = Math.ceil(shuffled.length / teamSize);
             const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e', '#84cc16'];
+            
+            const adjs = ["Lustiga", "Galna", "Smarta", "Snabba", "Modiga", "Trötta", "Listiga", "Starka", "Kvicka", "Kaxiga"].sort(() => 0.5 - Math.random());
+            const nouns = ["Rävarna", "Bären", "Sengångarna", "Ugglorna", "Älgarna", "Örnarna", "Myrorna", "Vargarna", "Tigrarna", "Lodjuren"].sort(() => 0.5 - Math.random());
+
             const teams = Array.from({length: numTeams}, (_, i) => ({
-                id: `team_${i}`, name: `Lag ${i+1}`, color: colors[i % colors.length]
+                id: `team_${i}`, 
+                name: `${adjs[i % adjs.length]} ${nouns[i % nouns.length]}`, 
+                color: colors[i % colors.length]
             }));
 
             const batch = writeBatch(db);
@@ -79,6 +94,10 @@
             });
             batch.update(doc(db, "sessions", sessionPin), { teams });
             await batch.commit();
+        };
+
+        window.changeTeam = async (playerId, newTeamId) => {
+            await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { teamId: newTeamId });
         };
 
         window.startGame = () => updateDoc(doc(db, "sessions", sessionPin), { gameState: 'playing', currentBoardIndex: 0, currentClueIndex: 0 });
@@ -109,7 +128,7 @@
         };
 
         window.banPlayer = async (playerId) => {
-            if(confirm("Banna denna spelare?")) {
+            if(confirm("Kick/Banna denna spelare?")) {
                 await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { banned: true });
             }
         };
@@ -122,45 +141,80 @@
 
             // Topbar
             let html = `
-                <header class="flex justify-between items-center mb-8 bg-slate-800 p-4 rounded-xl border border-slate-700">
+                <header class="flex justify-between items-center mb-10 bg-white p-6 rounded-2xl border border-slate-300 shadow-md">
                     <div>
-                        <h1 class="text-3xl font-black text-amber-500">PIN: ${sessionPin}</h1>
-                        <p class="text-slate-400 text-sm">Elever joinar på: <span class="text-white">${window.location.origin}/play.html?session=${sessionPin}</span></p>
+                        <p class="text-slate-500 font-bold uppercase tracking-wider text-sm mb-1">Gå till spelet via</p>
+                        <div class="flex items-center gap-3">
+                            <span class="text-xl font-mono bg-slate-100 px-3 py-1 rounded-md border border-slate-200">${playUrl}</span>
+                            <button id="copyBtn" onclick="copyPlayUrl()" class="px-4 py-2 bg-white border border-slate-300 rounded-md shadow-sm text-sm font-bold hover:bg-slate-50 transition">Kopiera länk</button>
+                        </div>
                     </div>
                     <div class="text-right">
-                        <p class="text-sm text-slate-400">Spelare anslutna</p>
-                        <p class="text-2xl font-bold">${activePlayers.length}</p>
+                        <p class="text-slate-500 font-bold uppercase tracking-wider text-sm mb-1">Pinkod</p>
+                        <h1 class="text-6xl font-black text-slate-900 tracking-tighter">${sessionPin}</h1>
                     </div>
                 </header>
             `;
 
             if (sessionData.gameState === 'lobby') {
                 html += `
-                    <div class="grid grid-cols-2 gap-8">
-                        <div class="bg-slate-800 p-6 rounded-xl border border-slate-700">
-                            <h2 class="text-xl font-bold mb-4">Väntrum</h2>
-                            <ul class="space-y-2 mb-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+                        <div class="md:col-span-1 bg-white p-6 rounded-2xl border border-slate-300 shadow-md">
+                            <h2 class="text-2xl font-black mb-1">Spelare (${activePlayers.length})</h2>
+                            <p class="text-sm text-slate-500 mb-6">De som har loggat in</p>
+                            
+                            <ul class="space-y-2 mb-8">
                                 ${activePlayers.map(p => `
-                                    <li class="flex justify-between items-center bg-slate-900 p-3 rounded-lg border border-slate-700">
-                                        <span class="font-semibold">${p.name}</span>
-                                        <button onclick="banPlayer('${p.id}')" class="text-red-400 hover:text-red-300 text-sm">Kick</button>
+                                    <li class="flex justify-between items-center bg-slate-50 p-3 rounded-lg border border-slate-200">
+                                        <span class="font-bold text-slate-800">${p.name}</span>
+                                        <button onclick="banPlayer('${p.id}')" class="text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded text-xs font-bold transition">Kick</button>
                                     </li>
-                                `).join('') || '<p class="text-slate-500">Inga spelare ännu...</p>'}
+                                `).join('') || '<p class="text-slate-500 italic">Väntar på spelare...</p>'}
                             </ul>
-                        </div>
-                        <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-6">
-                            <div>
-                                <h2 class="text-xl font-bold mb-2">Lagindelning</h2>
-                                <label class="block text-sm text-slate-400 mb-1">Önskad lagstorlek</label>
-                                <input type="number" id="teamSize" value="3" class="w-full bg-slate-900 border border-slate-700 rounded-md p-2 text-white mb-3">
-                                <button onclick="randomizeTeams()" class="w-full bg-slate-700 hover:bg-slate-600 font-bold py-2 rounded-md transition">Slumpa Lag</button>
+
+                            <div class="pt-6 border-t border-slate-200">
+                                <h3 class="font-bold mb-2">Inställningar för lag</h3>
+                                <label class="block text-sm text-slate-500 mb-1">Önskad maxstorlek per lag</label>
+                                <input type="number" id="teamSize" value="3" class="w-full bg-white border border-slate-300 rounded-md p-2 font-bold mb-3 focus:ring-2 focus:ring-slate-900 outline-none">
+                                <button onclick="randomizeTeams()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-3 rounded-lg transition shadow-md">Slumpa Lagindelning</button>
                             </div>
+                        </div>
+
+                        <div class="md:col-span-2 bg-white p-6 rounded-2xl border border-slate-300 shadow-md flex flex-col">
+                            <div class="flex justify-between items-center mb-6">
+                                <h2 class="text-2xl font-black">Lagöversikt</h2>
+                                ${sessionData.teams?.length > 0 ? `<button onclick="startGame()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2 px-6 rounded-lg transition shadow-md">Starta Spelet Nu</button>` : ''}
+                            </div>
+                            
                             ${sessionData.teams?.length > 0 ? `
-                                <div class="bg-slate-900 p-4 rounded-lg border border-slate-700">
-                                    <p class="text-sm font-bold text-emerald-400 mb-2">${sessionData.teams.length} lag skapade!</p>
-                                    <button onclick="startGame()" class="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-bold py-3 rounded-lg text-lg transition shadow-lg">Starta Spelet</button>
+                                <div class="grid grid-cols-2 gap-4 overflow-y-auto">
+                                    ${sessionData.teams.map(team => {
+                                        const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
+                                        const playerList = teamPlayers.map(p => `
+                                            <div class="flex justify-between items-center text-sm py-1.5 border-b border-slate-100 last:border-0">
+                                                <span class="font-semibold text-slate-700">${p.name}</span>
+                                                <select onchange="changeTeam('${p.id}', this.value)" class="text-xs bg-slate-50 border border-slate-200 rounded p-1 text-slate-600 outline-none">
+                                                    ${sessionData.teams.map(t => `<option value="${t.id}" ${t.id === team.id ? 'selected' : ''}>${t.name}</option>`).join('')}
+                                                </select>
+                                            </div>
+                                        `).join('');
+                                        
+                                        return `
+                                            <div class="border-t-4 bg-slate-50 rounded-b-xl rounded-t-sm shadow-sm border-x border-b border-slate-200 p-4" style="border-top-color: ${team.color}">
+                                                <h3 class="font-black text-lg mb-3 text-slate-800">${team.name}</h3>
+                                                <div class="space-y-1">
+                                                    ${playerList || '<span class="text-sm text-slate-400 italic">Tomt lag</span>'}
+                                                </div>
+                                            </div>
+                                        `;
+                                    }).join('')}
                                 </div>
-                            ` : ''}
+                            ` : `
+                                <div class="flex-1 flex flex-col items-center justify-center text-slate-400">
+                                    <svg class="w-12 h-12 mb-3 text-slate-200" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                                    <p>Inga lag skapade ännu.</p>
+                                </div>
+                            `}
                         </div>
                     </div>
                 `;
@@ -168,60 +222,63 @@
             else if (sessionData.gameState === 'playing') {
                 const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
                 html += `
-                    <div class="text-center mb-8">
-                        <p class="text-amber-500 font-bold tracking-widest uppercase text-sm mb-2">Fråga ${sessionData.currentBoardIndex + 1} av ${sessionData.boards.length}</p>
-                        <div class="bg-slate-800 border border-slate-700 rounded-xl p-8 mb-6 shadow-xl">
-                            <p class="text-slate-400 text-sm font-bold mb-4 uppercase">Ledtråd ${sessionData.currentClueIndex + 1} (${POINTS[sessionData.currentClueIndex]} poäng)</p>
-                            <h2 class="text-3xl font-black text-white leading-tight">${currentBoard.clues[sessionData.currentClueIndex]}</h2>
+                    <div class="text-center mb-10">
+                        <p class="text-slate-500 font-bold tracking-widest uppercase text-sm mb-3">Fråga ${sessionData.currentBoardIndex + 1} av ${sessionData.boards.length}</p>
+                        <div class="bg-white border-2 border-slate-900 rounded-2xl p-10 mb-6 shadow-[8px_8px_0px_0px_rgba(15,23,42,1)]">
+                            <p class="text-amber-600 text-sm font-black mb-4 uppercase">Ledtråd ${sessionData.currentClueIndex + 1} &mdash; ${POINTS[sessionData.currentClueIndex]} poäng</p>
+                            <h2 class="text-4xl font-black text-slate-900 leading-tight">${currentBoard.clues[sessionData.currentClueIndex]}</h2>
                         </div>
                         <div class="flex justify-center gap-4">
-                            ${sessionData.currentClueIndex < 4 ? `<button onclick="nextClue()" class="px-6 py-3 bg-slate-700 hover:bg-slate-600 font-bold rounded-lg transition">Visa nästa ledtråd</button>` : ''}
-                            <button onclick="revealAnswer()" class="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold rounded-lg transition shadow-lg">Lås spelet & Visa facit</button>
+                            ${sessionData.currentClueIndex < 4 ? `<button onclick="nextClue()" class="px-8 py-4 bg-white border-2 border-slate-900 hover:bg-slate-100 text-slate-900 font-black rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] transition-transform active:translate-y-1 active:translate-x-1 active:shadow-none">Visa nästa ledtråd</button>` : ''}
+                            <button onclick="revealAnswer()" class="px-8 py-4 bg-amber-400 border-2 border-slate-900 hover:bg-amber-300 text-slate-900 font-black rounded-xl shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] transition-transform active:translate-y-1 active:translate-x-1 active:shadow-none">Lås spelet & Visa facit</button>
                         </div>
                     </div>
 
-                    <h3 class="text-xl font-bold mb-4">Lagstatus</h3>
-                    <div class="grid grid-cols-3 gap-4">
-                        ${sessionData.teams.map(team => {
-                            const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
-                            const lockedCount = teamPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
-                            return `
-                                <div class="bg-slate-800 p-4 rounded-xl border-l-4" style="border-left-color: ${team.color}">
-                                    <h4 class="font-bold mb-2">${team.name}</h4>
-                                    <p class="text-sm text-slate-400">${lockedCount} av ${teamPlayers.length} har låst sitt svar.</p>
-                                </div>
-                            `;
-                        }).join('')}
+                    <div class="bg-white p-8 rounded-2xl border border-slate-300 shadow-md">
+                        <h3 class="text-2xl font-black mb-6 text-slate-800">Status: Vilka har låst sitt svar?</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+                            ${sessionData.teams.map(team => {
+                                const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
+                                const lockedCount = teamPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
+                                const isDone = lockedCount === teamPlayers.length && teamPlayers.length > 0;
+                                return `
+                                    <div class="p-4 rounded-xl border-t-8 border-x border-b border-slate-200 bg-slate-50 ${isDone ? 'opacity-50' : ''}" style="border-top-color: ${team.color}">
+                                        <h4 class="font-black text-lg mb-1 truncate" title="${team.name}">${team.name}</h4>
+                                        <p class="text-2xl font-black ${isDone ? 'text-emerald-600' : 'text-slate-400'}">${lockedCount} <span class="text-sm font-bold text-slate-500">av ${teamPlayers.length}</span></p>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
                     </div>
                 `;
             }
             else if (sessionData.gameState === 'revealing') {
                 const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
                 html += `
-                    <div class="text-center mb-8">
-                        <p class="text-slate-400 font-bold uppercase mb-2">Rätt svar var</p>
-                        <h2 class="text-5xl font-black text-emerald-400 mb-8">${currentBoard.answer}</h2>
-                        <button onclick="nextQuestion()" class="px-8 py-3 bg-amber-500 hover:bg-amber-400 text-slate-900 text-lg font-bold rounded-lg transition shadow-lg">Gå vidare</button>
+                    <div class="text-center mb-10">
+                        <p class="text-slate-500 font-bold uppercase mb-2">Rätt svar var</p>
+                        <h2 class="text-6xl font-black text-emerald-600 mb-8 drop-shadow-sm">${currentBoard.answer}</h2>
+                        <button onclick="nextQuestion()" class="px-10 py-4 bg-slate-900 hover:bg-slate-800 text-white text-xl font-black rounded-xl shadow-xl transition transform hover:scale-105">Gå vidare till nästa</button>
                     </div>
 
-                    <div class="grid grid-cols-2 gap-6">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         ${activePlayers.map(p => {
                             const ans = p.answers?.[sessionData.currentBoardIndex];
-                            if(!ans) return ''; // Svarade inte
+                            if(!ans) return ''; 
                             
                             let statusHtml = '';
-                            if(ans.correct === true) statusHtml = `<span class="text-emerald-400 font-bold">+${ans.points}p</span>`;
-                            else if(ans.correct === false) statusHtml = `<span class="text-red-400 font-bold">Fel (0p)</span>`;
+                            if(ans.correct === true) statusHtml = `<span class="text-emerald-600 font-black text-xl">+${ans.points}p</span>`;
+                            else if(ans.correct === false) statusHtml = `<span class="text-red-600 font-black text-xl">Fel (0p)</span>`;
                             else statusHtml = `
-                                <button onclick="markAnswer('${p.id}', true)" class="bg-emerald-500/20 text-emerald-400 px-3 py-1 rounded hover:bg-emerald-500/40 text-sm">Rätt</button>
-                                <button onclick="markAnswer('${p.id}', false)" class="bg-red-500/20 text-red-400 px-3 py-1 rounded hover:bg-red-500/40 text-sm">Fel</button>
+                                <button onclick="markAnswer('${p.id}', true)" class="bg-emerald-100 text-emerald-800 border border-emerald-300 px-4 py-2 rounded-lg hover:bg-emerald-200 font-bold">Rätt</button>
+                                <button onclick="markAnswer('${p.id}', false)" class="bg-red-100 text-red-800 border border-red-300 px-4 py-2 rounded-lg hover:bg-red-200 font-bold">Fel</button>
                             `;
 
                             return `
-                                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 flex justify-between items-center">
+                                <div class="bg-white p-5 rounded-2xl border-2 border-slate-200 shadow-sm flex justify-between items-center">
                                     <div>
-                                        <p class="font-bold text-lg">${p.name}</p>
-                                        <p class="text-sm text-slate-400">Svar: <span class="text-white font-semibold">"${ans.text}"</span> (låst på ${POINTS[ans.clueIndex]}p)</p>
+                                        <p class="font-black text-xl text-slate-800">${p.name}</p>
+                                        <p class="text-sm text-slate-500 font-medium">Svarade: <span class="text-slate-900 font-bold text-base">"${ans.text}"</span> (vid ${POINTS[ans.clueIndex]}p)</p>
                                     </div>
                                     <div class="flex gap-2">
                                         ${statusHtml}
@@ -233,7 +290,6 @@
                 `;
             }
             else if (sessionData.gameState === 'finished') {
-                // Calculate team scores (average of player scores)
                 const teamScores = sessionData.teams.map(team => {
                     const tPlayers = activePlayers.filter(p => p.teamId === team.id);
                     if(tPlayers.length === 0) return { ...team, score: 0 };
@@ -247,21 +303,21 @@
                 }).sort((a,b) => b.score - a.score);
 
                 html += `
-                    <div class="text-center mb-12">
-                        <h2 class="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-4">Spelet är slut!</h2>
-                        <p class="text-slate-400">Poäng baseras på lagens snittpoäng.</p>
+                    <div class="text-center mb-16">
+                        <h2 class="text-6xl font-black text-slate-900 mb-4">Spelet är slut!</h2>
+                        <p class="text-slate-500 font-bold text-lg">Resultattavla (Baserat på lagens snittpoäng)</p>
                     </div>
-                    <div class="max-w-2xl mx-auto space-y-4">
+                    <div class="max-w-3xl mx-auto space-y-4">
                         ${teamScores.map((t, i) => `
-                            <div class="flex items-center justify-between bg-slate-800 p-6 rounded-xl border border-slate-700 ${i===0 ? 'ring-2 ring-amber-500' : ''}">
-                                <div class="flex items-center gap-4">
-                                    <span class="text-3xl font-black ${i===0 ? 'text-amber-500' : 'text-slate-500'}">#${i+1}</span>
+                            <div class="flex items-center justify-between bg-white p-6 rounded-2xl border-2 ${i===0 ? 'border-amber-400 shadow-[8px_8px_0px_0px_#fbbf24]' : 'border-slate-200 shadow-md'}">
+                                <div class="flex items-center gap-6">
+                                    <span class="text-4xl font-black ${i===0 ? 'text-amber-500' : 'text-slate-400'}">#${i+1}</span>
                                     <div>
-                                        <h3 class="text-xl font-bold" style="color: ${t.color}">${t.name}</h3>
-                                        <p class="text-sm text-slate-400">${activePlayers.filter(p=>p.teamId === t.id).map(p=>p.name).join(', ')}</p>
+                                        <h3 class="text-2xl font-black" style="color: ${t.color}">${t.name}</h3>
+                                        <p class="text-sm font-semibold text-slate-500 mt-1">${activePlayers.filter(p=>p.teamId === t.id).map(p=>p.name).join(', ')}</p>
                                     </div>
                                 </div>
-                                <span class="text-3xl font-black text-white">${t.score} p</span>
+                                <span class="text-4xl font-black text-slate-900">${t.score} <span class="text-lg text-slate-500">p</span></span>
                             </div>
                         `).join('')}
                     </div>
