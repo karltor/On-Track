@@ -48,7 +48,6 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-        // Lade till writeBatch här för säkerhetsuppdelningen!
         import { getFirestore, doc, setDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -66,6 +65,7 @@
 
         // App State
         const STORAGE_KEY = 'pa_sparet_saved_boards';
+        const DEFAULTS_KEY = 'pa_sparet_imported_defaults';
         let boards = [];
         let selectedIndex = null;
         let editData = null; 
@@ -80,6 +80,44 @@
         function saveBoards() {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(boards));
             renderSidebar();
+        }
+
+        // Auto-importera standardpaket
+        async function loadDefaultPackages() {
+            let imported = JSON.parse(localStorage.getItem(DEFAULTS_KEY)) || [];
+            
+            // FILNAMN SOM KODEN LETAR EFTER I ROOT
+            // Lägg dina färdiga paket som paket1.json, paket2.json i din Github-repo
+            const filesToCheck = ['paket1.json', 'paket2.json', 'paket3.json']; 
+            let newlyImported = false;
+
+            for (const file of filesToCheck) {
+                if (!imported.includes(file)) {
+                    try {
+                        const response = await fetch(file);
+                        if (response.ok) {
+                            const data = await response.json();
+                            const packages = Array.isArray(data) ? data : [data];
+                            
+                            packages.forEach(pkg => {
+                                if (pkg.title && pkg.boards) {
+                                    boards.push(pkg);
+                                    newlyImported = true;
+                                }
+                            });
+                            // Markera som inläst så den aldrig läses in igen om läraren raderar den
+                            imported.push(file); 
+                        }
+                    } catch (e) {
+                        // Tyst ignorering om filen inte finns
+                    }
+                }
+            }
+
+            if (newlyImported) {
+                saveBoards(); 
+                localStorage.setItem(DEFAULTS_KEY, JSON.stringify(imported));
+            }
         }
 
         // ----------------------------------------------------
@@ -321,7 +359,6 @@
             }
         };
 
-        // STARTA SESSION MED SÄKERHET OCH 4-SIFFRIG PIN!
         window.startSession = async (index) => {
             const selectedBoard = boards[index];
             
@@ -336,7 +373,7 @@
             const sessionData = {
                 adminToken: adminToken,
                 gameState: "lobby",
-                boards: publicBoards, // Eleverna kan bara hämta detta!
+                boards: publicBoards,
                 currentBoardIndex: 0,
                 currentClueIndex: 0,
                 teams: [],
@@ -345,9 +382,7 @@
 
             try {
                 const batch = writeBatch(db);
-                // Offentligt dokument
                 batch.set(doc(db, "sessions", pin), sessionData);
-                // Hemligt dokument
                 batch.set(doc(db, "sessions", `${pin}_${adminToken}`), { answers: secretAnswers });
                 await batch.commit();
                 
@@ -361,6 +396,7 @@
 
         // Start
         loadBoards();
+        loadDefaultPackages(); // Laddar paket i bakgrunden första gången
         setView('welcome');
 
     </script>
