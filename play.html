@@ -8,7 +8,7 @@
 </head>
 <body class="bg-slate-900 text-white min-h-screen font-sans flex flex-col selection:bg-amber-500 selection:text-slate-900">
 
-    <div id="app" class="flex-1 flex flex-col p-4 md:p-8 max-w-5xl w-full mx-auto justify-center">
+    <div id="app" class="flex-1 flex flex-col p-4 md:p-8 max-w-4xl w-full mx-auto justify-center">
         <div class="flex justify-center"><div class="w-10 h-10 border-4 border-amber-500 border-t-transparent rounded-full animate-spin"></div></div>
     </div>
 
@@ -28,13 +28,13 @@
         let playerId = localStorage.getItem(`pa_sparet_player_${sessionPin}`);
 
         if (!sessionPin) {
-            document.getElementById('app').innerHTML = '<h1 class="text-center text-red-400 font-bold text-xl">Ingen PIN-kod angiven.</h1>';
+            document.getElementById('app').innerHTML = '<h1 class="text-center text-red-400 font-bold text-xl">Ingen PIN-kod angiven i länk.</h1>';
         }
 
         let sessionData = null;
         let allPlayers = [];
         let playerData = null;
-        let isFrozen = false; 
+        let finalResults = null; // Fryser slutet
         const POINTS = [10, 8, 6, 4, 2];
 
         // Minispel
@@ -43,20 +43,23 @@
 
         if(sessionPin) {
             onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
+                if (finalResults) return; // Gör inget om vi fryst vyn
+
                 if (docSnap.exists()) {
                     sessionData = docSnap.data();
-                    if(sessionData.gameState === 'finished') isFrozen = true;
-                    if(!isFrozen) render();
-                } else {
-                    if(!isFrozen) {
-                        document.getElementById('app').innerHTML = '<h1 class="text-center text-red-400 font-bold text-2xl">Spelet är stängt.</h1>';
-                        localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
+                    if(sessionData.gameState === 'finished') {
+                        computeFinalResults();
+                    } else {
+                        render();
                     }
+                } else {
+                    document.getElementById('app').innerHTML = '<h1 class="text-center text-red-400 font-bold text-2xl mt-12">Spelet är stängt av din lärare.</h1>';
+                    localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
                 }
             });
 
             onSnapshot(collection(db, "sessions", sessionPin, "players"), (snap) => {
-                if(isFrozen) return; 
+                if(finalResults) return; 
                 allPlayers = [];
                 snap.forEach(doc => allPlayers.push({id: doc.id, ...doc.data()}));
                 
@@ -64,12 +67,32 @@
                     playerData = allPlayers.find(p => p.id === playerId);
                     if(playerData?.banned) {
                         localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
-                        document.getElementById('app').innerHTML = '<h1 class="text-center text-red-500 font-black text-3xl mt-20">Utkastad</h1><p class="text-center text-slate-400 mt-2">Din lärare har blockerat dig.</p>';
+                        document.getElementById('app').innerHTML = '<h1 class="text-center text-red-500 font-black text-3xl mt-20">Utkastad</h1><p class="text-center text-slate-400 mt-2">Din lärare har tagit bort dig från spelet.</p>';
                         return;
                     }
                 }
                 render();
             });
+        }
+
+        function computeFinalResults() {
+            if(!playerData || !sessionData) return;
+            const myTeam = sessionData.teams?.find(t => t.id === playerData.teamId);
+            const teamMates = allPlayers.filter(p => p.teamId === myTeam?.id && !p.banned);
+            
+            const myTotalPoints = Object.values(playerData.answers || {}).reduce((sum, a) => sum + (a.points || 0), 0);
+            let teamTotal = 0;
+            let teamAvg = 0;
+            
+            if (teamMates.length > 0) {
+                teamTotal = teamMates.reduce((sum, p) => sum + Object.values(p.answers || {}).reduce((s, a) => s + (a.points || 0), 0), 0);
+                teamAvg = Math.round((teamTotal / teamMates.length) * 10) / 10;
+            }
+
+            finalResults = {
+                myTotalPoints, teamTotal, teamAvg, myTeam
+            };
+            render();
         }
 
         window.joinGame = async (e) => {
@@ -87,7 +110,7 @@
                 playerId = docRef.id;
                 localStorage.setItem(`pa_sparet_player_${sessionPin}`, playerId);
                 
-                // FORCE RENDER LOKALT (Fix för dubbelklicksbuggen)
+                // Force lokalt för att undvika dubbelklick-buggen!
                 playerData = { id: playerId, name: name, teamId: null, banned: false, answers: {} };
                 allPlayers.push(playerData);
                 render();
@@ -129,8 +152,37 @@
         };
 
         function render() {
-            if (!sessionData && !isFrozen) return;
             const appEl = document.getElementById('app');
+
+            // --- FRYST SLUTSKÄRM ---
+            if (finalResults) {
+                const { myTotalPoints, teamTotal, teamAvg, myTeam } = finalResults;
+                const teamBadge = myTeam ? `<div class="px-4 py-2 rounded-full text-sm font-bold mb-8 mx-auto w-max" style="background-color: ${myTeam.color}20; color: ${myTeam.color}; border: 1px solid ${myTeam.color}40">${myTeam.name}</div>` : '';
+                
+                appEl.innerHTML = `
+                    <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
+                        ${teamBadge}
+                        <h2 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-8">Bra kämpat!</h2>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                            <div class="bg-slate-800 p-8 rounded-3xl border border-slate-700 shadow-xl">
+                                <p class="text-slate-400 font-bold uppercase tracking-widest text-xs mb-2">Du bidrog med</p>
+                                <p class="text-6xl font-black text-white">${myTotalPoints} <span class="text-2xl text-slate-500">p</span></p>
+                            </div>
+                            <div class="bg-slate-800 p-8 rounded-3xl border border-slate-700 shadow-xl flex flex-col justify-center">
+                                <p class="text-slate-400 font-bold uppercase tracking-widest text-xs mb-1">Lagsnitt</p>
+                                <p class="text-4xl font-black text-amber-400 mb-4">${teamAvg} p</p>
+                                <p class="text-slate-500 text-sm">Lagets totala poäng: ${teamTotal}</p>
+                            </div>
+                        </div>
+                        
+                        <p class="text-slate-500 mt-4 font-bold text-sm uppercase tracking-widest animate-pulse">Kolla in prispallen på storskärmen!</p>
+                    </div>
+                `;
+                return;
+            }
+
+            if (!sessionData) return;
 
             if (!playerId || !playerData) {
                 appEl.innerHTML = `
@@ -149,7 +201,6 @@
             const myTeam = sessionData.teams?.find(t => t.id === playerData.teamId);
             const teamMates = myTeam ? allPlayers.filter(p => p.teamId === myTeam.id && p.id !== playerId) : [];
             
-            // Liten team banner (Används under själva spelet)
             const smallTeamHtml = myTeam ? `
                 <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-6 flex flex-col md:flex-row items-center justify-between shadow-sm gap-2">
                     <div class="text-center md:text-left">
@@ -157,20 +208,20 @@
                         <p class="font-black text-xl mb-1" style="color: ${myTeam.color}">${myTeam.name}</p>
                     </div>
                     <div class="text-center md:text-right text-xs text-slate-400 font-medium">
-                        ${teamMates.length > 0 ? `Lagkamrater:<br><span class="text-white">${teamMates.map(m => m.name).join(', ')}</span>` : 'Du är ensam i laget.'}
+                        ${teamMates.length > 0 ? `Tillsammans med:<br><span class="text-white">${teamMates.map(m => m.name).join(', ')}</span>` : 'Du är ensam i laget än så länge.'}
                     </div>
                 </div>
             ` : '';
 
-            // Stor team banner (Används enbart i lobbyn)
+            // Omdesignad lobby
             const lobbyTeamHtml = myTeam ? `
                 <div class="bg-slate-800 p-8 rounded-3xl border-2 border-slate-700 mb-8 text-center shadow-xl">
                     <p class="text-sm text-slate-400 font-bold uppercase tracking-widest mb-2">Du spelar i</p>
-                    <p class="font-black text-5xl mb-6 drop-shadow-md" style="color: ${myTeam.color}">${myTeam.name}</p>
-                    <div class="bg-slate-900/80 rounded-2xl p-6 inline-block min-w-[250px] border border-slate-700/50">
-                        <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mb-3">Lagkamrater</p>
-                        <p class="text-2xl text-white font-medium">
-                            ${teamMates.length > 0 ? teamMates.map(m => m.name).join('<br>') : '<span class="text-slate-500 italic">Du är ensam än så länge</span>'}
+                    <p class="font-black text-5xl md:text-6xl mb-8 drop-shadow-md" style="color: ${myTeam.color}">${myTeam.name}</p>
+                    <div class="bg-slate-900/80 rounded-2xl p-6 w-full border border-slate-700/50">
+                        <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mb-4">Dina Lagkamrater</p>
+                        <p class="text-2xl text-white font-medium leading-relaxed">
+                            ${teamMates.length > 0 ? teamMates.map(m => m.name).join('<br>') : '<span class="text-slate-500 italic">Du är ensam än så länge...</span>'}
                         </p>
                     </div>
                 </div>
@@ -178,10 +229,10 @@
 
             if (sessionData.gameState === 'lobby') {
                 appEl.innerHTML = `
-                    <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
+                    <div class="text-center flex-1 flex flex-col justify-center max-w-lg mx-auto w-full">
+                        <h2 class="text-4xl font-black text-white mb-2">Hej ${playerData.name}!</h2>
+                        <p class="text-lg text-slate-400 font-medium mb-8">Invänta Spelledaren...</p>
                         ${lobbyTeamHtml}
-                        <h2 class="text-4xl font-black text-white mb-4">Hej ${playerData.name}!</h2>
-                        <p class="text-xl text-slate-400 font-medium mb-12">Invänta Spelledaren...</p>
                         
                         <div class="bg-slate-800 p-6 rounded-3xl border-2 border-slate-700 shadow-xl select-none">
                             <p class="text-amber-400 font-bold uppercase tracking-widest text-xs mb-4">Minispel</p>
@@ -199,7 +250,7 @@
                 const myAnswer = playerData.answers?.[sessionData.currentBoardIndex];
 
                 let cluesHtml = currentBoard.clues.slice(0, activeClueIndex + 1).map((clue, i) => `
-                    <div class="bg-slate-800 p-4 md:p-6 rounded-xl border border-slate-700 mb-3 shadow-md flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
+                    <div class="bg-slate-800 p-4 md:p-6 rounded-xl border border-slate-700 mb-3 shadow-md flex flex-col md:flex-row md:items-center gap-3 md:gap-6">
                         <span class="bg-slate-900 text-amber-500 text-sm font-black px-4 py-2 rounded-lg shrink-0 uppercase tracking-wider w-max">${POINTS[i]} poäng</span>
                         <p class="text-lg md:text-xl font-medium text-slate-100 leading-relaxed">${clue}</p>
                     </div>
@@ -209,8 +260,8 @@
                     appEl.innerHTML = `${smallTeamHtml}
                         <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
                             <p class="text-emerald-400 font-bold mb-2 uppercase tracking-widest text-sm">Svar låst!</p>
-                            <h2 class="text-4xl font-black text-white mb-6">"${myAnswer.text}"</h2>
-                            <p class="text-slate-400 text-sm">Låst på <span class="text-amber-400 font-bold">${POINTS[myAnswer.clueIndex]}p</span>-nivån.</p>
+                            <h2 class="text-4xl md:text-5xl font-black text-white mb-6">"${myAnswer.text}"</h2>
+                            <p class="text-slate-400 text-base">Låst på <span class="text-amber-400 font-bold">${POINTS[myAnswer.clueIndex]}p</span>-nivån.</p>
                             <div class="mt-12 w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
                         </div>
                     `;
@@ -220,8 +271,8 @@
                             ${cluesHtml}
                         </div>
                         <form onsubmit="lockAnswer(event)" class="bg-slate-800 p-4 md:p-6 rounded-2xl border border-slate-700 sticky bottom-4 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] flex flex-col md:flex-row gap-3">
-                            <input type="text" id="answerInput" class="flex-1 bg-slate-900 border-2 border-slate-600 rounded-xl px-6 py-4 text-white font-bold text-xl focus:border-amber-500 focus:outline-none transition-colors placeholder:text-slate-600" placeholder="Skriv ditt svar..." required autocomplete="off">
-                            <button type="submit" id="lockBtn" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-10 py-4 rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-xl whitespace-nowrap">Lås in mitt svar!</button>
+                            <input type="text" id="answerInput" class="flex-1 bg-slate-900 border-2 border-slate-600 rounded-xl px-6 py-4 text-white font-bold text-xl md:text-2xl focus:border-amber-500 focus:outline-none transition-colors placeholder:text-slate-600" placeholder="Skriv ditt svar..." required autocomplete="off">
+                            <button type="submit" id="lockBtn" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-10 py-4 rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-xl md:text-2xl whitespace-nowrap">Lås in mitt svar!</button>
                         </form>
                     `;
                 }
@@ -244,20 +295,6 @@
                             ${myAnswer ? `<p class="text-slate-400 font-bold text-base mb-6">Du skrev: <span class="text-white">"${myAnswer.text}"</span></p>` : ''}
                             ${resultHtml}
                         </div>
-                    </div>
-                `;
-            }
-            else if (sessionData.gameState === 'finished' || isFrozen) {
-                const myTotalPoints = Object.values(playerData.answers || {}).reduce((sum, a) => sum + (a.points || 0), 0);
-                appEl.innerHTML = `${smallTeamHtml}
-                    <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
-                        <h2 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-8">Bra kämpat!</h2>
-                        <div class="bg-slate-800 p-10 rounded-3xl border border-slate-700 shadow-xl">
-                            <p class="text-slate-400 font-bold uppercase tracking-widest text-base mb-2">Du drog in totalt</p>
-                            <p class="text-8xl font-black text-white">${myTotalPoints} <span class="text-4xl text-slate-500">p</span></p>
-                            <p class="text-slate-400 font-bold text-base mt-6">åt ditt lag</p>
-                        </div>
-                        <p class="text-slate-500 mt-12 font-bold text-sm uppercase tracking-widest animate-pulse">Kolla pallen på storskärmen!</p>
                     </div>
                 `;
             }
