@@ -38,11 +38,17 @@
         let sessionData = null;
         let playersData = [];
         let secretAnswers = [];
-        let finalResults = null; // Den frysta statiska datan
+        let finalResults = null; 
         const POINTS = [10, 8, 6, 4, 2];
+        let hasCleanedUp = false; 
         
         const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
         const playUrl = `${window.location.origin}${basePath}/play.html?session=${sessionPin}`;
+
+        // Forcea en re-render var 5:e sekund för att uppdatera offline-status på elever
+        setInterval(() => {
+            if(sessionData && sessionData.gameState !== 'finished') render();
+        }, 5000);
 
         onSnapshot(doc(db, "sessions", `${sessionPin}_${adminToken}`), (docSnap) => {
             if(finalResults) return;
@@ -50,17 +56,15 @@
         });
 
         onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
-            if(finalResults) return; // Ignorera db-ändringar om vi fryst spelet
+            if(finalResults) return; 
 
             if (docSnap.exists()) {
                 sessionData = docSnap.data();
                 
-                // FRYS SPELET & STÄDA DATABASEN
                 if (sessionData.gameState === 'finished') {
                     finalResults = calculateFinalResults();
-                    render(); // Rendera sista skärmen från fryst data
+                    render(); 
 
-                    // Vänta 5 sek, sen Ghost-städar vi databasen!
                     setTimeout(async () => {
                         try {
                             const batch = writeBatch(db);
@@ -68,7 +72,6 @@
                             batch.delete(doc(db, "sessions", sessionPin));
                             batch.delete(doc(db, "sessions", `${sessionPin}_${adminToken}`));
                             await batch.commit();
-                            console.log("Databasen städades tyst i bakgrunden.");
                         } catch(e) {}
                     }, 5000);
                     return;
@@ -78,14 +81,13 @@
         });
 
         onSnapshot(collection(db, "sessions", sessionPin, "players"), (querySnapshot) => {
-            if(finalResults) return; // Ignorera om spelet är fryst
+            if(finalResults) return; 
             
             playersData = [];
             querySnapshot.forEach((docSnap) => {
                 const p = { id: docSnap.id, ...docSnap.data() };
                 playersData.push(p);
 
-                // Auto-rätta exakta svar
                 if (sessionData && sessionData.gameState === 'playing' && secretAnswers.length > 0) {
                     const ans = p.answers?.[sessionData.currentBoardIndex];
                     const correctAns = secretAnswers[sessionData.currentBoardIndex].trim().toLowerCase();
@@ -124,19 +126,6 @@
             }
         };
 
-        window.downloadResults = () => {
-            if(!finalResults) return;
-            let csv = "Placering,Lag,Snittpoang,Totalpoang,Spelare\n";
-            finalResults.forEach((t, i) => {
-                csv += `${i+1},"${t.name}",${t.score},${t.total},"${t.players}"\n`;
-            });
-            const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = `Resultat_PaRattSpar_${sessionPin}.csv`;
-            a.click();
-        };
-
         window.drag = (ev, playerId) => { ev.dataTransfer.setData("playerId", playerId); };
         window.allowDrop = (ev) => { ev.preventDefault(); ev.currentTarget.classList.add('drag-over'); };
         window.leaveDrop = (ev) => { ev.currentTarget.classList.remove('drag-over'); };
@@ -170,7 +159,19 @@
         };
 
         window.changeTeam = async (playerId, newTeamId) => updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { teamId: newTeamId });
-        window.startGame = () => updateDoc(doc(db, "sessions", sessionPin), { gameState: 'playing', currentBoardIndex: 0, currentClueIndex: 0 });
+        
+        window.startGame = () => {
+            // Filtrera bort tomma lag
+            const activeTeams = sessionData.teams.filter(t => playersData.some(p => p.teamId === t.id && !p.banned));
+            
+            updateDoc(doc(db, "sessions", sessionPin), { 
+                gameState: 'playing', 
+                currentBoardIndex: 0, 
+                currentClueIndex: 0,
+                teams: activeTeams 
+            });
+        };
+
         window.nextClue = () => updateDoc(doc(db, "sessions", sessionPin), { currentClueIndex: Math.min(4, sessionData.currentClueIndex + 1) });
         window.revealAnswer = () => updateDoc(doc(db, "sessions", sessionPin), { gameState: 'revealing', revealedAnswer: secretAnswers[sessionData.currentBoardIndex] });
         
@@ -202,21 +203,19 @@
             const batch = writeBatch(db);
             for(let i=1; i<=30; i++) {
                 const ref = doc(collection(db, "sessions", sessionPin, "players"));
-                batch.set(ref, { name: "Elev " + i, teamId: null, banned: false, answers: {} });
+                batch.set(ref, { name: "Elev " + i, teamId: null, banned: false, answers: {}, lastActive: Date.now() });
             }
             await batch.commit();
         };
 
         // --- RENDER ---
         function render() {
-            // Om vi har ett fryst slutresultat
             if (finalResults) {
                 const appEl = document.getElementById('app');
                 appEl.innerHTML = `
                     <div class="text-center mb-10">
                         <h2 class="text-6xl font-black text-slate-900 mb-4">Spelet är slut!</h2>
                         <p class="text-slate-500 font-bold text-lg mb-2">Resultattavla (Baserat på lagens snittpoäng)</p>
-                        <button onclick="downloadResults()" class="px-4 py-2 bg-emerald-100 text-emerald-700 border border-emerald-300 font-bold rounded hover:bg-emerald-200 transition text-sm">Ladda ner resultat (CSV)</button>
                     </div>
                     <div class="max-w-3xl mx-auto space-y-4">
                         ${finalResults.map((t, i) => `
@@ -236,15 +235,15 @@
                         <button onclick="window.location.href='index.html'" class="px-8 py-3 bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200 font-bold rounded-lg transition">Tillbaka till startsidan</button>
                     </div>
                 `;
-                return; // Avbryt vidare rendering
+                return; 
             }
 
             if (!sessionData) return;
             const appEl = document.getElementById('app');
             const activePlayers = playersData.filter(p => !p.banned);
+            const now = Date.now();
             let html = '';
 
-            // Om vi spelar döljs headern och ersätts med minimal PIN
             if (sessionData.gameState !== 'lobby') {
                 html += `<div class="absolute top-4 left-4 bg-slate-100 text-slate-400 px-3 py-1 rounded-md text-xs font-bold border border-slate-200">PIN: ${sessionPin}</div>`;
             } else {
@@ -265,7 +264,6 @@
                 `;
             }
 
-            // --- LOBBY ---
             if (sessionData.gameState === 'lobby') {
                 const unassigned = activePlayers.filter(p => !p.teamId);
                 html += `
@@ -278,12 +276,15 @@
                             </div>
                             <p class="text-xs text-slate-400 mb-3">Dra och släpp elever för att byta lag.</p>
                             <div class="space-y-1.5 mb-6 flex-1 overflow-y-auto pr-1">
-                                ${unassigned.map(p => `
-                                    <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center bg-slate-50 hover:bg-slate-100 p-2 rounded-md border border-slate-200 text-sm cursor-grab active:cursor-grabbing">
-                                        <span class="font-bold truncate pointer-events-none">${p.name}</span>
+                                ${unassigned.map(p => {
+                                    const isOnline = (now - (p.lastActive || now)) < 15000;
+                                    return `
+                                    <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center bg-slate-50 hover:bg-slate-100 p-2 rounded-md border border-slate-200 text-sm cursor-grab active:cursor-grabbing ${isOnline ? '' : 'opacity-50'}">
+                                        <span class="font-bold truncate pointer-events-none ${isOnline ? '' : 'line-through text-slate-400'}" title="${isOnline ? '' : 'Offline'}">${p.name}</span>
                                         <button onclick="banPlayer('${p.id}')" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 rounded font-bold">&times;</button>
                                     </div>
-                                `).join('') || '<p class="text-slate-400 text-sm italic">Inga väntande elever...</p>'}
+                                    `;
+                                }).join('') || '<p class="text-slate-400 text-sm italic">Inga väntande elever...</p>'}
                             </div>
                             <div class="pt-4 border-t border-slate-200">
                                 <label class="block text-xs font-bold text-slate-500 mb-1">Önskad maxstorlek per lag</label>
@@ -308,11 +309,14 @@
                                                  style="border-top-color: ${team.color}">
                                                 <h3 class="font-black text-sm mb-3 text-slate-800 truncate" title="${team.name}">${team.name}</h3>
                                                 <div class="space-y-1.5 flex-1">
-                                                    ${teamPlayers.map(p => `
-                                                        <div draggable="true" ondragstart="drag(event, '${p.id}')" class="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-100 rounded px-2 py-1 cursor-grab active:cursor-grabbing truncate">
+                                                    ${teamPlayers.map(p => {
+                                                        const isOnline = (now - (p.lastActive || now)) < 15000;
+                                                        return `
+                                                        <div draggable="true" ondragstart="drag(event, '${p.id}')" class="text-xs font-semibold ${isOnline ? 'text-slate-700 bg-slate-50' : 'text-slate-400 bg-slate-100 line-through'} border border-slate-100 rounded px-2 py-1 cursor-grab active:cursor-grabbing truncate" title="${isOnline ? '' : 'Offline'}">
                                                             ${p.name}
                                                         </div>
-                                                    `).join('') || '<span class="text-xs text-slate-400">Dra spelare hit</span>'}
+                                                    `;
+                                                    }).join('') || '<span class="text-xs text-slate-400">Dra spelare hit</span>'}
                                                 </div>
                                             </div>
                                         `;
@@ -323,7 +327,6 @@
                     </div>
                 `;
             } 
-            // --- PLAYING ---
             else if (sessionData.gameState === 'playing') {
                 const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
                 html += `
@@ -339,23 +342,33 @@
                         </div>
                     </div>
 
-                    <div class="bg-white p-6 rounded-xl border border-slate-300 shadow-sm">
+                    <div class="bg-slate-50 p-6 rounded-xl border border-slate-300 shadow-sm">
                         <h3 class="text-lg font-black mb-4 text-slate-700">Status: Vilka har låst?</h3>
                         <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                             ${sessionData.teams.map(team => {
                                 const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
-                                const lockedCount = teamPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
-                                const missing = teamPlayers.filter(p => !p.answers?.[sessionData.currentBoardIndex]?.locked).map(p=>p.name).join(', ');
-                                const fillRatio = teamPlayers.length ? (lockedCount / teamPlayers.length) * 100 : 0;
-                                const isDone = lockedCount === teamPlayers.length && teamPlayers.length > 0;
+                                
+                                // HEARTBEAT LOGIC: Räkna bara förväntade svar om spelaren är online ELLER redan har låst
+                                const expectedPlayers = teamPlayers.filter(p => {
+                                    const isOnline = (now - (p.lastActive || 0)) < 15000;
+                                    const hasLocked = p.answers?.[sessionData.currentBoardIndex]?.locked;
+                                    return isOnline || hasLocked;
+                                });
+
+                                const lockedCount = expectedPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
+                                const expectedCount = expectedPlayers.length;
+                                const missing = expectedPlayers.filter(p => !p.answers?.[sessionData.currentBoardIndex]?.locked).map(p=>p.name).join(', ');
+                                
+                                const fillRatio = expectedCount ? (lockedCount / expectedCount) * 100 : 0;
+                                const isDone = lockedCount === expectedCount && expectedCount > 0;
                                 
                                 return `
-                                    <div title="${missing ? 'Väntar på: ' + missing : 'Alla har svarat!'}" 
+                                    <div title="${missing ? 'Väntar på: ' + missing : 'Laget är klart/Fullt'}" 
                                          class="relative overflow-hidden p-3 rounded-lg border border-slate-200 shadow-sm cursor-help"
                                          style="background: linear-gradient(to top, ${team.color}33 ${fillRatio}%, white ${fillRatio}%)">
                                         <div class="relative z-10">
                                             <h4 class="font-bold text-xs truncate text-slate-700">${team.name}</h4>
-                                            <p class="text-xl font-black ${isDone ? 'text-emerald-600' : 'text-slate-800'}">${lockedCount}/${teamPlayers.length}</p>
+                                            <p class="text-xl font-black ${isDone ? 'text-emerald-600' : 'text-slate-800'}">${lockedCount}/${expectedCount}</p>
                                         </div>
                                     </div>
                                 `;
@@ -364,7 +377,6 @@
                     </div>
                 `;
             }
-            // --- REVEALING ---
             else if (sessionData.gameState === 'revealing') {
                 const correctAns = secretAnswers[sessionData.currentBoardIndex];
                 html += `
