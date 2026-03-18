@@ -7,10 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .drag-over { background-color: #f1f5f9; border: 2px dashed #94a3b8 !important; }
-        .team-fill { transition: height 0.3s ease; }
     </style>
 </head>
-<body class="bg-white text-slate-900 min-h-screen font-sans selection:bg-amber-200">
+<body class="bg-white text-slate-900 min-h-screen font-sans selection:bg-amber-200 relative">
     <div id="app" class="max-w-7xl mx-auto p-4 md:p-8 pb-24">
         <div class="flex items-center justify-center h-64">
             <p class="text-slate-500 font-bold animate-pulse text-xl">Laddar session...</p>
@@ -40,7 +39,7 @@
         let playersData = [];
         let secretAnswers = [];
         const POINTS = [10, 8, 6, 4, 2];
-        let hasCleanedUp = false; // För auto-delete på slutet
+        let hasCleanedUp = false; 
         
         const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
         const playUrl = `${window.location.origin}${basePath}/play.html?session=${sessionPin}`;
@@ -53,10 +52,8 @@
             if (docSnap.exists()) {
                 sessionData = docSnap.data();
                 
-                // AUTO CLEANUP NÄR SPELET ÄR KLART
                 if(sessionData.gameState === 'finished' && !hasCleanedUp) {
                     hasCleanedUp = true;
-                    // Låt eleverna ladda hem pallen, radera sedan om 10 sekunder i bakgrunden
                     setTimeout(async () => {
                         try {
                             const batch = writeBatch(db);
@@ -64,7 +61,6 @@
                             batch.delete(doc(db, "sessions", sessionPin));
                             batch.delete(doc(db, "sessions", `${sessionPin}_${adminToken}`));
                             await batch.commit();
-                            console.log("Databas rensad.");
                         } catch(e) {}
                     }, 10000);
                 }
@@ -78,16 +74,15 @@
                 const p = { id: docSnap.id, ...docSnap.data() };
                 playersData.push(p);
 
-                // AUTO-RÄTTNING
                 if (sessionData && sessionData.gameState === 'playing' && secretAnswers.length > 0) {
                     const ans = p.answers?.[sessionData.currentBoardIndex];
                     const correctAns = secretAnswers[sessionData.currentBoardIndex].trim().toLowerCase();
                     
                     if (ans && ans.locked && ans.correct === null) {
                         if (ans.text.trim().toLowerCase() === correctAns) {
-                            markAnswer(p.id, true); // Exakt!
+                            markAnswer(p.id, true); 
                         } else {
-                            markAnswer(p.id, false); // Fel!
+                            markAnswer(p.id, false); 
                         }
                     }
                 }
@@ -95,15 +90,15 @@
             render();
         });
 
-        // --- ACTIONS ---
         window.copyPlayUrl = () => {
             navigator.clipboard.writeText(playUrl);
             const btn = document.getElementById('copyBtn');
-            btn.innerText = "Kopierad!"; btn.classList.add("bg-emerald-100", "text-emerald-700", "border-emerald-300");
-            setTimeout(() => { btn.innerText = "Kopiera elevlänk"; btn.classList.remove("bg-emerald-100", "text-emerald-700", "border-emerald-300"); }, 2000);
+            if(btn) {
+                btn.innerText = "Kopierad!"; btn.classList.add("bg-emerald-100", "text-emerald-700", "border-emerald-300");
+                setTimeout(() => { btn.innerText = "Kopiera Elevlänk"; btn.classList.remove("bg-emerald-100", "text-emerald-700", "border-emerald-300"); }, 2000);
+            }
         };
 
-        // DRAG AND DROP
         window.drag = (ev, playerId) => { ev.dataTransfer.setData("playerId", playerId); };
         window.allowDrop = (ev) => { ev.preventDefault(); ev.currentTarget.classList.add('drag-over'); };
         window.leaveDrop = (ev) => { ev.currentTarget.classList.remove('drag-over'); };
@@ -120,9 +115,9 @@
             const shuffled = activePlayers.sort(() => 0.5 - Math.random());
             
             const numTeams = Math.ceil(shuffled.length / teamSize);
-            const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e', '#84cc16'];
-            const adjs = ["Lustiga", "Galna", "Smarta", "Snabba", "Modiga", "Trötta", "Listiga", "Starka", "Kaxiga"].sort(() => 0.5 - Math.random());
-            const nouns = ["Rävarna", "Bären", "Sengångarna", "Ugglorna", "Älgarna", "Örnarna", "Myrorna", "Vargarna", "Tigrarna"].sort(() => 0.5 - Math.random());
+            const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e', '#84cc16', '#0ea5e9', '#d946ef', '#eab308', '#06b6d4'];
+            const adjs = ["Lustiga", "Galna", "Smarta", "Snabba", "Modiga", "Trötta", "Listiga", "Starka", "Kvicka", "Sköna", "Vilda", "Fina"].sort(() => 0.5 - Math.random());
+            const nouns = ["Rävarna", "Bären", "Sengångarna", "Ugglorna", "Älgarna", "Örnarna", "Myrorna", "Vargarna", "Tigrarna", "Lodjuren", "Björnarna", "Hajarna"].sort(() => 0.5 - Math.random());
 
             const teams = Array.from({length: numTeams}, (_, i) => ({
                 id: `team_${i}`, name: `${adjs[i % adjs.length]} ${nouns[i % nouns.length]}`, color: colors[i % colors.length]
@@ -147,12 +142,12 @@
             const ans = p.answers[sessionData.currentBoardIndex];
             let points = 0;
             if (status === true) points = POINTS[ans.clueIndex];
-            else if (status === 'minus') points = -5; // Straffpoäng!
+            else if (status === 'minus') points = -5;
 
             await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), {
                 [`answers.${sessionData.currentBoardIndex}.correct`]: status === true,
                 [`answers.${sessionData.currentBoardIndex}.points`]: points,
-                [`answers.${sessionData.currentBoardIndex}.status`]: status // Kan vara true, false, eller 'minus'
+                [`answers.${sessionData.currentBoardIndex}.status`]: status
             });
         };
 
@@ -166,6 +161,10 @@
 
         window.banPlayer = async (playerId) => { if(confirm("Kick/Banna denna spelare?")) await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { banned: true }); };
 
+        window.endAndCleanup = async () => {
+            window.location.href = "index.html"; // DB städas av auto-cleanupen efter 10 sek
+        };
+
         window.addDummyPlayers = async () => {
             const batch = writeBatch(db);
             for(let i=1; i<=30; i++) {
@@ -175,27 +174,32 @@
             await batch.commit();
         };
 
-        // --- RENDER ---
         function render() {
             if (!sessionData) return;
             const appEl = document.getElementById('app');
             const activePlayers = playersData.filter(p => !p.banned);
+            let html = '';
 
-            let html = `
-                <header class="flex justify-between items-center mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm">
-                    <div>
-                        <p class="text-slate-500 font-bold uppercase tracking-wider text-sm mb-1">Gå till spelet via</p>
-                        <div class="flex items-center gap-2 mt-1">
-                            <input type="text" readonly value="${playUrl}" class="bg-white border border-slate-300 font-medium text-sm px-3 py-1.5 w-64 rounded-md text-slate-700">
-                            <button id="copyBtn" onclick="copyPlayUrl()" class="px-4 py-1.5 bg-white border border-slate-300 rounded-md shadow-sm text-sm font-bold hover:bg-slate-50 transition">Kopiera länk</button>
+            // Om vi spelar visar vi bara en liten PIN i hörnet
+            if (sessionData.gameState !== 'lobby') {
+                html += `<div class="absolute top-4 left-4 bg-slate-100 text-slate-400 px-3 py-1 rounded-md text-xs font-bold border border-slate-200">PIN: ${sessionPin}</div>`;
+            } else {
+                html += `
+                    <header class="flex justify-between items-center mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <div>
+                            <p class="text-slate-500 font-bold uppercase tracking-wider text-sm mb-1">Gå till spelet via</p>
+                            <div class="flex items-center gap-2 mt-1">
+                                <input type="text" readonly value="${playUrl}" class="bg-white border border-slate-300 font-medium text-sm px-3 py-1.5 w-64 rounded-md text-slate-700">
+                                <button id="copyBtn" onclick="copyPlayUrl()" class="px-4 py-1.5 bg-white border border-slate-300 rounded-md shadow-sm text-sm font-bold hover:bg-slate-50 transition">Kopiera Elevlänk</button>
+                            </div>
                         </div>
-                    </div>
-                    <div class="text-right">
-                        <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Elever anslutna</p>
-                        <p class="text-4xl font-black text-slate-800">${activePlayers.length}</p>
-                    </div>
-                </header>
-            `;
+                        <div class="text-right">
+                            <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Elever anslutna</p>
+                            <p class="text-4xl font-black text-slate-800">${activePlayers.length}</p>
+                        </div>
+                    </header>
+                `;
+            }
 
             if (sessionData.gameState === 'lobby') {
                 const unassigned = activePlayers.filter(p => !p.teamId);
@@ -205,7 +209,7 @@
                              ondrop="drop(event, 'null')" ondragover="allowDrop(event)" ondragleave="leaveDrop(event)">
                             <div class="flex justify-between items-center mb-3">
                                 <h2 class="font-black text-lg">Väntrum (${unassigned.length})</h2>
-                                <button onclick="addDummyPlayers()" class="text-[10px] bg-slate-100 border border-slate-200 hover:bg-slate-200 px-2 py-1 rounded font-bold">+30 Botar</button>
+                                <button onclick="addDummyPlayers()" class="text-[10px] bg-slate-100 border border-slate-200 hover:bg-slate-200 px-2 py-1 rounded font-bold shadow-sm">+30 Botar</button>
                             </div>
                             <p class="text-xs text-slate-400 mb-3">Dra och släpp elever för att byta lag.</p>
                             <div class="space-y-1.5 mb-6 flex-1 overflow-y-auto pr-1">
@@ -216,7 +220,6 @@
                                     </div>
                                 `).join('') || '<p class="text-slate-400 text-sm italic">Inga väntande elever...</p>'}
                             </div>
-
                             <div class="pt-4 border-t border-slate-200">
                                 <label class="block text-xs font-bold text-slate-500 mb-1">Önskad maxstorlek per lag</label>
                                 <input type="number" id="teamSize" value="3" class="w-full bg-slate-50 border border-slate-300 rounded p-2 text-sm font-bold mb-2 outline-none focus:border-amber-500">
@@ -227,7 +230,7 @@
                         <div class="lg:col-span-3 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col">
                             <div class="flex justify-between items-center mb-4">
                                 <h2 class="text-xl font-black">Lagöversikt</h2>
-                                ${sessionData.teams?.length > 0 ? `<button onclick="startGame()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2 px-8 rounded-lg transition shadow-sm">Starta Spelet</button>` : ''}
+                                ${sessionData.teams?.length > 0 ? `<button onclick="startGame()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2 px-6 rounded-lg transition shadow-md">Starta Spelet</button>` : ''}
                             </div>
                             
                             ${sessionData.teams?.length > 0 ? `
@@ -258,10 +261,10 @@
             else if (sessionData.gameState === 'playing') {
                 const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
                 html += `
-                    <div class="text-center mb-8">
+                    <div class="text-center mb-10">
                         <p class="text-slate-500 font-bold uppercase text-xs mb-2 tracking-widest">Fråga ${sessionData.currentBoardIndex + 1} av ${sessionData.boards.length}</p>
                         <div class="bg-white border-2 border-slate-900 rounded-xl p-6 mb-4 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]">
-                            <p class="text-amber-600 text-sm font-black mb-2 uppercase">Ledtråd ${sessionData.currentClueIndex + 1} &mdash; ${POINTS[sessionData.currentClueIndex]} poäng</p>
+                            <p class="text-amber-500 text-sm font-black mb-2 uppercase">Ledtråd ${sessionData.currentClueIndex + 1} &mdash; ${POINTS[sessionData.currentClueIndex]} poäng</p>
                             <h2 class="text-3xl font-black text-slate-800 leading-tight">${currentBoard.clues[sessionData.currentClueIndex]}</h2>
                         </div>
                         <div class="flex justify-center gap-3">
@@ -270,8 +273,8 @@
                         </div>
                     </div>
 
-                    <div class="bg-white p-6 rounded-xl border border-slate-300 shadow-sm">
-                        <h3 class="text-lg font-black mb-4 text-slate-700">Svarsindikator (Hover för info)</h3>
+                    <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
+                        <h3 class="text-lg font-black mb-4 text-slate-700">Status: Vilka har låst?</h3>
                         <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                             ${sessionData.teams.map(team => {
                                 const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
@@ -320,7 +323,6 @@
                                             else if(ans.correct === false && ans.status !== 'minus') actions = `<span class="text-red-500 font-bold px-2">0p</span>`;
                                             else if(ans.status === 'minus') actions = `<span class="text-slate-800 font-bold px-2">-5p</span>`;
                                             
-                                            // Knappar för läraren att korrigera
                                             actions += `
                                                 <div class="flex gap-1 ml-2 border-l border-slate-200 pl-2">
                                                     <button onclick="markAnswer('${p.id}', true)" title="Ge Rätt" class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-sm hover:bg-emerald-200 transition">🟢</button>
@@ -360,7 +362,6 @@
                     <div class="text-center mb-10">
                         <h2 class="text-6xl font-black text-slate-900 mb-4">Spelet är slut!</h2>
                         <p class="text-slate-500 font-bold text-lg">Resultattavla (Baserat på lagens snittpoäng)</p>
-                        <p class="text-emerald-600 font-bold text-sm mt-2">Databasen raderas automatiskt i bakgrunden...</p>
                     </div>
                     <div class="max-w-3xl mx-auto space-y-4">
                         ${teamScores.map((t, i) => `
@@ -377,7 +378,7 @@
                         `).join('')}
                     </div>
                     <div class="text-center mt-12">
-                        <button onclick="window.location.href='index.html'" class="px-8 py-3 bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200 font-bold rounded-lg transition">Tillbaka till start</button>
+                        <button onclick="endAndCleanup()" class="px-8 py-3 bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200 font-bold rounded-lg transition">Återgå till startsidan</button>
                     </div>
                 `;
             }
