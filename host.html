@@ -5,8 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>På Rätt Spår - Lärarvy</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .drag-over { background-color: #f1f5f9; border: 2px dashed #94a3b8 !important; }
+        .team-fill { transition: height 0.3s ease; }
+    </style>
 </head>
-<body class="bg-white text-slate-900 min-h-screen font-sans">
+<body class="bg-white text-slate-900 min-h-screen font-sans selection:bg-amber-200">
     <div id="app" class="max-w-7xl mx-auto p-4 md:p-8 pb-24">
         <div class="flex items-center justify-center h-64">
             <p class="text-slate-500 font-bold animate-pulse text-xl">Laddar session...</p>
@@ -36,39 +40,54 @@
         let playersData = [];
         let secretAnswers = [];
         const POINTS = [10, 8, 6, 4, 2];
+        let hasCleanedUp = false; // För auto-delete på slutet
         
-        // Hämta origin dynamiskt, t.ex. https://karltor.github.io/On-Track/
         const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
         const playUrl = `${window.location.origin}${basePath}/play.html?session=${sessionPin}`;
 
-        // Lyssna på hemliga facit
         onSnapshot(doc(db, "sessions", `${sessionPin}_${adminToken}`), (docSnap) => {
             if (docSnap.exists()) secretAnswers = docSnap.data().answers;
         });
 
-        // Lyssna på Session
         onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
             if (docSnap.exists()) {
                 sessionData = docSnap.data();
+                
+                // AUTO CLEANUP NÄR SPELET ÄR KLART
+                if(sessionData.gameState === 'finished' && !hasCleanedUp) {
+                    hasCleanedUp = true;
+                    // Låt eleverna ladda hem pallen, radera sedan om 10 sekunder i bakgrunden
+                    setTimeout(async () => {
+                        try {
+                            const batch = writeBatch(db);
+                            playersData.forEach(p => batch.delete(doc(db, "sessions", sessionPin, "players", p.id)));
+                            batch.delete(doc(db, "sessions", sessionPin));
+                            batch.delete(doc(db, "sessions", `${sessionPin}_${adminToken}`));
+                            await batch.commit();
+                            console.log("Databas rensad.");
+                        } catch(e) {}
+                    }, 10000);
+                }
                 render();
             }
         });
 
-        // Lyssna på Spelare & Auto-rätta
         onSnapshot(collection(db, "sessions", sessionPin, "players"), (querySnapshot) => {
             playersData = [];
             querySnapshot.forEach((docSnap) => {
                 const p = { id: docSnap.id, ...docSnap.data() };
                 playersData.push(p);
 
-                // Auto-rättning i realtid
+                // AUTO-RÄTTNING
                 if (sessionData && sessionData.gameState === 'playing' && secretAnswers.length > 0) {
                     const ans = p.answers?.[sessionData.currentBoardIndex];
                     const correctAns = secretAnswers[sessionData.currentBoardIndex].trim().toLowerCase();
                     
                     if (ans && ans.locked && ans.correct === null) {
                         if (ans.text.trim().toLowerCase() === correctAns) {
-                            markAnswer(p.id, true); // Exakt matchning!
+                            markAnswer(p.id, true); // Exakt!
+                        } else {
+                            markAnswer(p.id, false); // Fel!
                         }
                     }
                 }
@@ -80,8 +99,19 @@
         window.copyPlayUrl = () => {
             navigator.clipboard.writeText(playUrl);
             const btn = document.getElementById('copyBtn');
-            btn.innerText = "Kopierad!"; btn.classList.add("bg-emerald-100", "text-emerald-700");
-            setTimeout(() => { btn.innerText = "Kopiera elevlänk"; btn.classList.remove("bg-emerald-100", "text-emerald-700"); }, 2000);
+            btn.innerText = "Kopierad!"; btn.classList.add("bg-emerald-100", "text-emerald-700", "border-emerald-300");
+            setTimeout(() => { btn.innerText = "Kopiera elevlänk"; btn.classList.remove("bg-emerald-100", "text-emerald-700", "border-emerald-300"); }, 2000);
+        };
+
+        // DRAG AND DROP
+        window.drag = (ev, playerId) => { ev.dataTransfer.setData("playerId", playerId); };
+        window.allowDrop = (ev) => { ev.preventDefault(); ev.currentTarget.classList.add('drag-over'); };
+        window.leaveDrop = (ev) => { ev.currentTarget.classList.remove('drag-over'); };
+        window.drop = (ev, teamId) => {
+            ev.preventDefault();
+            ev.currentTarget.classList.remove('drag-over');
+            const playerId = ev.dataTransfer.getData("playerId");
+            if(playerId) changeTeam(playerId, teamId === 'null' ? null : teamId);
         };
 
         window.randomizeTeams = async () => {
@@ -90,9 +120,9 @@
             const shuffled = activePlayers.sort(() => 0.5 - Math.random());
             
             const numTeams = Math.ceil(shuffled.length / teamSize);
-            const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e', '#84cc16', '#0ea5e9', '#d946ef', '#eab308', '#06b6d4'];
-            const adjs = ["Lustiga", "Galna", "Smarta", "Snabba", "Modiga", "Trötta", "Listiga", "Starka", "Kvicka", "Sköna", "Vilda", "Fina"].sort(() => 0.5 - Math.random());
-            const nouns = ["Rävarna", "Bären", "Sengångarna", "Ugglorna", "Älgarna", "Örnarna", "Myrorna", "Vargarna", "Tigrarna", "Lodjuren", "Björnarna", "Hajarna"].sort(() => 0.5 - Math.random());
+            const colors = ['#f59e0b', '#10b981', '#3b82f6', '#ec4899', '#8b5cf6', '#14b8a6', '#f43f5e', '#84cc16'];
+            const adjs = ["Lustiga", "Galna", "Smarta", "Snabba", "Modiga", "Trötta", "Listiga", "Starka", "Kaxiga"].sort(() => 0.5 - Math.random());
+            const nouns = ["Rävarna", "Bären", "Sengångarna", "Ugglorna", "Älgarna", "Örnarna", "Myrorna", "Vargarna", "Tigrarna"].sort(() => 0.5 - Math.random());
 
             const teams = Array.from({length: numTeams}, (_, i) => ({
                 id: `team_${i}`, name: `${adjs[i % adjs.length]} ${nouns[i % nouns.length]}`, color: colors[i % colors.length]
@@ -110,21 +140,19 @@
         window.changeTeam = async (playerId, newTeamId) => updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { teamId: newTeamId });
         window.startGame = () => updateDoc(doc(db, "sessions", sessionPin), { gameState: 'playing', currentBoardIndex: 0, currentClueIndex: 0 });
         window.nextClue = () => updateDoc(doc(db, "sessions", sessionPin), { currentClueIndex: Math.min(4, sessionData.currentClueIndex + 1) });
+        window.revealAnswer = () => updateDoc(doc(db, "sessions", sessionPin), { gameState: 'revealing', revealedAnswer: secretAnswers[sessionData.currentBoardIndex] });
         
-        window.revealAnswer = () => {
-            updateDoc(doc(db, "sessions", sessionPin), { 
-                gameState: 'revealing',
-                revealedAnswer: secretAnswers[sessionData.currentBoardIndex] // Skicka svaret till eleverna NU
-            });
-        };
-        
-        window.markAnswer = async (playerId, isCorrect) => {
+        window.markAnswer = async (playerId, status) => {
             const p = playersData.find(p => p.id === playerId);
             const ans = p.answers[sessionData.currentBoardIndex];
-            const points = isCorrect ? POINTS[ans.clueIndex] : 0;
+            let points = 0;
+            if (status === true) points = POINTS[ans.clueIndex];
+            else if (status === 'minus') points = -5; // Straffpoäng!
+
             await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), {
-                [`answers.${sessionData.currentBoardIndex}.correct`]: isCorrect,
-                [`answers.${sessionData.currentBoardIndex}.points`]: points
+                [`answers.${sessionData.currentBoardIndex}.correct`]: status === true,
+                [`answers.${sessionData.currentBoardIndex}.points`]: points,
+                [`answers.${sessionData.currentBoardIndex}.status`]: status // Kan vara true, false, eller 'minus'
             });
         };
 
@@ -136,24 +164,13 @@
             }
         };
 
-        window.banPlayer = async (playerId) => { if(confirm("Ta bort elev?")) await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { banned: true }); };
-
-        window.endAndCleanup = async () => {
-            if(confirm("Detta raderar all data för sessionen permanent. Är du säker?")) {
-                const batch = writeBatch(db);
-                playersData.forEach(p => batch.delete(doc(db, "sessions", sessionPin, "players", p.id)));
-                batch.delete(doc(db, "sessions", sessionPin));
-                batch.delete(doc(db, "sessions", `${sessionPin}_${adminToken}`));
-                await batch.commit();
-                window.location.href = "index.html";
-            }
-        };
+        window.banPlayer = async (playerId) => { if(confirm("Kick/Banna denna spelare?")) await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { banned: true }); };
 
         window.addDummyPlayers = async () => {
             const batch = writeBatch(db);
             for(let i=1; i<=30; i++) {
                 const ref = doc(collection(db, "sessions", sessionPin, "players"));
-                batch.set(ref, { name: "Test Elev " + i, teamId: null, banned: false, answers: {} });
+                batch.set(ref, { name: "Elev " + i, teamId: null, banned: false, answers: {} });
             }
             await batch.commit();
         };
@@ -164,69 +181,70 @@
             const appEl = document.getElementById('app');
             const activePlayers = playersData.filter(p => !p.banned);
 
-            // Topbar
             let html = `
-                <header class="flex justify-between items-center mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                <header class="flex justify-between items-center mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm">
                     <div>
-                        <h1 class="text-3xl font-black text-slate-800">PIN: ${sessionPin}</h1>
+                        <p class="text-slate-500 font-bold uppercase tracking-wider text-sm mb-1">Gå till spelet via</p>
                         <div class="flex items-center gap-2 mt-1">
-                            <input type="text" readonly value="${playUrl}" class="bg-white border border-slate-200 text-xs px-2 py-1 w-64 rounded text-slate-500">
-                            <button id="copyBtn" onclick="copyPlayUrl()" class="px-3 py-1 bg-white border border-slate-300 rounded text-xs font-bold hover:bg-slate-100 transition">Kopiera elevlänk</button>
+                            <input type="text" readonly value="${playUrl}" class="bg-white border border-slate-300 font-medium text-sm px-3 py-1.5 w-64 rounded-md text-slate-700">
+                            <button id="copyBtn" onclick="copyPlayUrl()" class="px-4 py-1.5 bg-white border border-slate-300 rounded-md shadow-sm text-sm font-bold hover:bg-slate-50 transition">Kopiera länk</button>
                         </div>
                     </div>
                     <div class="text-right">
                         <p class="text-xs font-bold text-slate-400 uppercase tracking-wider">Elever anslutna</p>
-                        <p class="text-3xl font-black text-slate-800">${activePlayers.length}</p>
+                        <p class="text-4xl font-black text-slate-800">${activePlayers.length}</p>
                     </div>
                 </header>
             `;
 
             if (sessionData.gameState === 'lobby') {
+                const unassigned = activePlayers.filter(p => !p.teamId);
                 html += `
                     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-                        <div class="lg:col-span-1 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                        <div class="lg:col-span-1 bg-white p-4 rounded-xl border border-slate-300 shadow-sm flex flex-col"
+                             ondrop="drop(event, 'null')" ondragover="allowDrop(event)" ondragleave="leaveDrop(event)">
                             <div class="flex justify-between items-center mb-3">
-                                <h2 class="font-black text-lg">Väntrum</h2>
-                                <button onclick="addDummyPlayers()" class="text-[10px] bg-slate-200 hover:bg-slate-300 px-2 py-1 rounded font-bold">+30 Botar</button>
+                                <h2 class="font-black text-lg">Väntrum (${unassigned.length})</h2>
+                                <button onclick="addDummyPlayers()" class="text-[10px] bg-slate-100 border border-slate-200 hover:bg-slate-200 px-2 py-1 rounded font-bold">+30 Botar</button>
                             </div>
-                            <div class="space-y-1 mb-6 max-h-96 overflow-y-auto pr-2">
-                                ${activePlayers.map(p => `
-                                    <div class="flex justify-between items-center bg-white p-2 rounded border border-slate-200 text-sm">
-                                        <span class="font-bold truncate">${p.name}</span>
-                                        <button onclick="banPlayer('${p.id}')" class="text-red-500 hover:bg-red-50 px-2 rounded font-bold">&times;</button>
+                            <p class="text-xs text-slate-400 mb-3">Dra och släpp elever för att byta lag.</p>
+                            <div class="space-y-1.5 mb-6 flex-1 overflow-y-auto pr-1">
+                                ${unassigned.map(p => `
+                                    <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center bg-slate-50 hover:bg-slate-100 p-2 rounded-md border border-slate-200 text-sm cursor-grab active:cursor-grabbing">
+                                        <span class="font-bold truncate pointer-events-none">${p.name}</span>
+                                        <button onclick="banPlayer('${p.id}')" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 rounded font-bold">&times;</button>
                                     </div>
-                                `).join('') || '<p class="text-slate-400 text-sm italic">Inga elever än...</p>'}
+                                `).join('') || '<p class="text-slate-400 text-sm italic">Inga väntande elever...</p>'}
                             </div>
 
                             <div class="pt-4 border-t border-slate-200">
                                 <label class="block text-xs font-bold text-slate-500 mb-1">Önskad maxstorlek per lag</label>
-                                <input type="number" id="teamSize" value="3" class="w-full bg-white border border-slate-300 rounded p-2 text-sm font-bold mb-2 outline-none focus:border-amber-500">
+                                <input type="number" id="teamSize" value="3" class="w-full bg-slate-50 border border-slate-300 rounded p-2 text-sm font-bold mb-2 outline-none focus:border-amber-500">
                                 <button onclick="randomizeTeams()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded transition text-sm">Slumpa Lagen</button>
                             </div>
                         </div>
 
-                        <div class="lg:col-span-3 bg-white p-4 rounded-xl border border-slate-200 flex flex-col">
+                        <div class="lg:col-span-3 bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col">
                             <div class="flex justify-between items-center mb-4">
                                 <h2 class="text-xl font-black">Lagöversikt</h2>
-                                ${sessionData.teams?.length > 0 ? `<button onclick="startGame()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2 px-6 rounded-lg transition shadow-sm">Starta Spelet</button>` : ''}
+                                ${sessionData.teams?.length > 0 ? `<button onclick="startGame()" class="bg-amber-400 hover:bg-amber-500 text-slate-900 font-black py-2 px-8 rounded-lg transition shadow-sm">Starta Spelet</button>` : ''}
                             </div>
                             
                             ${sessionData.teams?.length > 0 ? `
-                                <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-3 overflow-y-auto">
+                                <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 overflow-y-auto p-1">
                                     ${sessionData.teams.map(team => {
                                         const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
                                         return `
-                                            <div class="border-t-4 bg-slate-50 rounded shadow-sm border-x border-b border-slate-200 p-2" style="border-top-color: ${team.color}">
-                                                <h3 class="font-bold text-sm mb-2 text-slate-800 truncate" title="${team.name}">${team.name}</h3>
-                                                <div class="space-y-1">
+                                            <div ondrop="drop(event, '${team.id}')" ondragover="allowDrop(event)" ondragleave="leaveDrop(event)" 
+                                                 class="border-t-4 bg-white rounded-md shadow-sm border-x border-b border-slate-200 p-3 min-h-[100px] flex flex-col" 
+                                                 style="border-top-color: ${team.color}">
+                                                <h3 class="font-black text-sm mb-3 text-slate-800 truncate" title="${team.name}">${team.name}</h3>
+                                                <div class="space-y-1.5 flex-1">
                                                     ${teamPlayers.map(p => `
-                                                        <div class="flex justify-between items-center">
-                                                            <span class="text-xs font-semibold text-slate-600 truncate">${p.name}</span>
-                                                            <select onchange="changeTeam('${p.id}', this.value)" class="text-[10px] bg-white border border-slate-200 rounded p-0.5 max-w-[40px]">
-                                                                ${sessionData.teams.map(t => `<option value="${t.id}" ${t.id === team.id ? 'selected' : ''}>Lag ${t.id.split('_')[1]}</option>`).join('')}
-                                                            </select>
+                                                        <div draggable="true" ondragstart="drag(event, '${p.id}')" class="text-xs font-semibold text-slate-700 bg-slate-50 border border-slate-100 rounded px-2 py-1 cursor-grab active:cursor-grabbing truncate">
+                                                            ${p.name}
                                                         </div>
-                                                    `).join('') || '<span class="text-xs text-slate-400">Tomt</span>'}
+                                                    `).join('') || '<span class="text-xs text-slate-400">Dra spelare hit</span>'}
                                                 </div>
                                             </div>
                                         `;
@@ -241,28 +259,35 @@
                 const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
                 html += `
                     <div class="text-center mb-8">
-                        <p class="text-slate-400 font-bold uppercase text-xs mb-2 tracking-widest">Fråga ${sessionData.currentBoardIndex + 1} av ${sessionData.boards.length}</p>
-                        <div class="bg-white border-2 border-slate-200 rounded-xl p-6 mb-4 shadow-sm">
-                            <p class="text-amber-500 text-sm font-black mb-2 uppercase">Ledtråd ${sessionData.currentClueIndex + 1} &mdash; ${POINTS[sessionData.currentClueIndex]} poäng</p>
+                        <p class="text-slate-500 font-bold uppercase text-xs mb-2 tracking-widest">Fråga ${sessionData.currentBoardIndex + 1} av ${sessionData.boards.length}</p>
+                        <div class="bg-white border-2 border-slate-900 rounded-xl p-6 mb-4 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)]">
+                            <p class="text-amber-600 text-sm font-black mb-2 uppercase">Ledtråd ${sessionData.currentClueIndex + 1} &mdash; ${POINTS[sessionData.currentClueIndex]} poäng</p>
                             <h2 class="text-3xl font-black text-slate-800 leading-tight">${currentBoard.clues[sessionData.currentClueIndex]}</h2>
                         </div>
                         <div class="flex justify-center gap-3">
-                            ${sessionData.currentClueIndex < 4 ? `<button onclick="nextClue()" class="px-6 py-2 bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-sm">Nästa ledtråd</button>` : ''}
+                            ${sessionData.currentClueIndex < 4 ? `<button onclick="nextClue()" class="px-6 py-2 bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-sm shadow-sm">Nästa ledtråd</button>` : ''}
                             <button onclick="revealAnswer()" class="px-6 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold rounded-lg transition shadow-sm text-sm">Lås spelet & Visa facit</button>
                         </div>
                     </div>
 
-                    <div class="bg-slate-50 p-6 rounded-xl border border-slate-200">
-                        <h3 class="text-lg font-black mb-4 text-slate-700">Status: Vilka har låst?</h3>
+                    <div class="bg-white p-6 rounded-xl border border-slate-300 shadow-sm">
+                        <h3 class="text-lg font-black mb-4 text-slate-700">Svarsindikator (Hover för info)</h3>
                         <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
                             ${sessionData.teams.map(team => {
                                 const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
                                 const lockedCount = teamPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
+                                const missing = teamPlayers.filter(p => !p.answers?.[sessionData.currentBoardIndex]?.locked).map(p=>p.name).join(', ');
+                                const fillRatio = teamPlayers.length ? (lockedCount / teamPlayers.length) * 100 : 0;
                                 const isDone = lockedCount === teamPlayers.length && teamPlayers.length > 0;
+                                
                                 return `
-                                    <div class="p-3 rounded-lg border-l-4 bg-white border-y border-r border-slate-200 shadow-sm ${isDone ? 'opacity-50' : ''}" style="border-left-color: ${team.color}">
-                                        <h4 class="font-bold text-xs truncate text-slate-600">${team.name}</h4>
-                                        <p class="text-xl font-black ${isDone ? 'text-emerald-500' : 'text-slate-800'}">${lockedCount}/${teamPlayers.length}</p>
+                                    <div title="${missing ? 'Väntar på: ' + missing : 'Alla har svarat!'}" 
+                                         class="relative overflow-hidden p-3 rounded-lg border border-slate-200 shadow-sm cursor-help"
+                                         style="background: linear-gradient(to top, ${team.color}33 ${fillRatio}%, white ${fillRatio}%)">
+                                        <div class="relative z-10">
+                                            <h4 class="font-bold text-xs truncate text-slate-700">${team.name}</h4>
+                                            <p class="text-xl font-black ${isDone ? 'text-emerald-600' : 'text-slate-800'}">${lockedCount}/${teamPlayers.length}</p>
+                                        </div>
                                     </div>
                                 `;
                             }).join('')}
@@ -276,7 +301,7 @@
                     <div class="text-center mb-8">
                         <p class="text-slate-400 font-bold uppercase text-xs mb-1">Rätt svar var</p>
                         <h2 class="text-4xl font-black text-emerald-600 mb-6">${correctAns}</h2>
-                        <button onclick="nextQuestion()" class="px-8 py-3 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg shadow-md transition">Gå vidare till nästa</button>
+                        <button onclick="nextQuestion()" class="px-8 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg shadow-md transition">Gå vidare till nästa</button>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -288,15 +313,19 @@
                                     <div class="space-y-2">
                                         ${teamPlayers.map(p => {
                                             const ans = p.answers?.[sessionData.currentBoardIndex];
-                                            if(!ans) return `<div class="text-xs text-slate-400 flex justify-between"><span class="font-bold">${p.name}</span> Inget svar</div>`;
+                                            if(!ans) return `<div class="text-xs text-slate-400 flex justify-between bg-slate-50 p-2 border border-slate-100 rounded"><span class="font-bold">${p.name}</span> Inget svar</div>`;
                                             
                                             let actions = '';
-                                            if(ans.correct === true) actions = `<span class="text-emerald-600 font-bold">+${ans.points}p</span>`;
-                                            else if(ans.correct === false) actions = `<span class="text-red-500 font-bold">0p</span>`;
-                                            else actions = `
-                                                <div class="flex gap-1">
-                                                    <button onclick="markAnswer('${p.id}', true)" class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-[10px] font-bold hover:bg-emerald-200">Rätt</button>
-                                                    <button onclick="markAnswer('${p.id}', false)" class="bg-red-100 text-red-700 px-2 py-1 rounded text-[10px] font-bold hover:bg-red-200">Fel</button>
+                                            if(ans.correct === true) actions = `<span class="text-emerald-600 font-bold px-2">+${ans.points}p</span>`;
+                                            else if(ans.correct === false && ans.status !== 'minus') actions = `<span class="text-red-500 font-bold px-2">0p</span>`;
+                                            else if(ans.status === 'minus') actions = `<span class="text-slate-800 font-bold px-2">-5p</span>`;
+                                            
+                                            // Knappar för läraren att korrigera
+                                            actions += `
+                                                <div class="flex gap-1 ml-2 border-l border-slate-200 pl-2">
+                                                    <button onclick="markAnswer('${p.id}', true)" title="Ge Rätt" class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-sm hover:bg-emerald-200 transition">🟢</button>
+                                                    <button onclick="markAnswer('${p.id}', false)" title="Ge Fel (0p)" class="bg-red-100 text-red-700 px-2 py-1 rounded text-sm hover:bg-red-200 transition">🔴</button>
+                                                    <button onclick="markAnswer('${p.id}', 'minus')" title="Ge Minuspoäng (-5p) för olämpligt svar" class="bg-slate-200 text-slate-800 px-2 py-1 rounded text-sm hover:bg-slate-300 transition">💀</button>
                                                 </div>
                                             `;
 
@@ -306,7 +335,9 @@
                                                         <p class="font-bold text-xs text-slate-800 truncate">${p.name}</p>
                                                         <p class="text-xs text-slate-500 truncate">"${ans.text}" <span class="opacity-50">(${POINTS[ans.clueIndex]}p)</span></p>
                                                     </div>
-                                                    ${actions}
+                                                    <div class="flex items-center">
+                                                        ${actions}
+                                                    </div>
                                                 </div>
                                             `;
                                         }).join('')}
@@ -327,25 +358,26 @@
 
                 html += `
                     <div class="text-center mb-10">
-                        <h2 class="text-5xl font-black text-slate-900 mb-2">Slutresultat</h2>
-                        <p class="text-slate-500 font-bold">Baserat på lagens snittpoäng</p>
+                        <h2 class="text-6xl font-black text-slate-900 mb-4">Spelet är slut!</h2>
+                        <p class="text-slate-500 font-bold text-lg">Resultattavla (Baserat på lagens snittpoäng)</p>
+                        <p class="text-emerald-600 font-bold text-sm mt-2">Databasen raderas automatiskt i bakgrunden...</p>
                     </div>
-                    <div class="max-w-3xl mx-auto space-y-3 mb-12">
+                    <div class="max-w-3xl mx-auto space-y-4">
                         ${teamScores.map((t, i) => `
-                            <div class="flex items-center justify-between bg-white p-4 rounded-xl border ${i===0 ? 'border-amber-400 shadow-[4px_4px_0px_0px_#fbbf24]' : 'border-slate-200 shadow-sm'}">
-                                <div class="flex items-center gap-4">
-                                    <span class="text-2xl font-black ${i===0 ? 'text-amber-500' : 'text-slate-400'} w-8 text-center">#${i+1}</span>
+                            <div class="flex items-center justify-between bg-white p-6 rounded-2xl border-2 ${i===0 ? 'border-amber-400 shadow-[6px_6px_0px_0px_#fbbf24]' : 'border-slate-200 shadow-sm'}">
+                                <div class="flex items-center gap-6">
+                                    <span class="text-4xl font-black ${i===0 ? 'text-amber-500' : 'text-slate-400'}">#${i+1}</span>
                                     <div>
-                                        <h3 class="text-lg font-black" style="color: ${t.color}">${t.name}</h3>
-                                        <p class="text-xs font-semibold text-slate-500 mt-0.5">${activePlayers.filter(p=>p.teamId === t.id).map(p=>p.name).join(', ')}</p>
+                                        <h3 class="text-2xl font-black" style="color: ${t.color}">${t.name}</h3>
+                                        <p class="text-sm font-semibold text-slate-500 mt-1">${activePlayers.filter(p=>p.teamId === t.id).map(p=>p.name).join(', ')}</p>
                                     </div>
                                 </div>
-                                <span class="text-2xl font-black text-slate-900">${t.score} <span class="text-sm text-slate-500">p</span></span>
+                                <span class="text-4xl font-black text-slate-900">${t.score} <span class="text-lg text-slate-500">p</span></span>
                             </div>
                         `).join('')}
                     </div>
-                    <div class="text-center">
-                        <button onclick="endAndCleanup()" class="px-6 py-3 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 font-bold rounded-lg transition text-sm">Avsluta & Rensa Databasen</button>
+                    <div class="text-center mt-12">
+                        <button onclick="window.location.href='index.html'" class="px-8 py-3 bg-slate-100 text-slate-600 border border-slate-300 hover:bg-slate-200 font-bold rounded-lg transition">Tillbaka till start</button>
                     </div>
                 `;
             }
