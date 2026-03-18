@@ -34,10 +34,10 @@
         let sessionData = null;
         let allPlayers = [];
         let playerData = null;
-        let isFrozen = false; // Förhindrar att resultatet försvinner när databasen raderas
+        let isFrozen = false; 
         const POINTS = [10, 8, 6, 4, 2];
 
-        // Minigame variables
+        // Minispel
         let coalCount = 0;
         let highScore = parseInt(localStorage.getItem('pa_sparet_hs')) || 0;
 
@@ -56,7 +56,7 @@
             });
 
             onSnapshot(collection(db, "sessions", sessionPin, "players"), (snap) => {
-                if(isFrozen) return; // Uppdatera inte om spelet är över och fryst
+                if(isFrozen) return; 
                 allPlayers = [];
                 snap.forEach(doc => allPlayers.push({id: doc.id, ...doc.data()}));
                 
@@ -76,7 +76,7 @@
             e.preventDefault();
             const btn = document.getElementById('joinBtn');
             const name = document.getElementById('playerName').value.trim();
-            if(!name) return;
+            if(!name || btn.disabled) return;
 
             btn.disabled = true;
             btn.innerText = "Ansluter...";
@@ -86,6 +86,12 @@
                 });
                 playerId = docRef.id;
                 localStorage.setItem(`pa_sparet_player_${sessionPin}`, playerId);
+                
+                // FORCE RENDER LOKALT (Fix för dubbelklicksbuggen)
+                playerData = { id: playerId, name: name, teamId: null, banned: false, answers: {} };
+                allPlayers.push(playerData);
+                render();
+                
             } catch { 
                 alert("Kunde inte ansluta."); 
                 btn.disabled = false;
@@ -97,7 +103,7 @@
             e.preventDefault();
             const btn = document.getElementById('lockBtn');
             const answerText = document.getElementById('answerInput').value.trim();
-            if(!answerText) return;
+            if(!answerText || btn.disabled) return;
             
             btn.disabled = true;
             btn.innerText = "Låser...";
@@ -142,23 +148,40 @@
 
             const myTeam = sessionData.teams?.find(t => t.id === playerData.teamId);
             const teamMates = myTeam ? allPlayers.filter(p => p.teamId === myTeam.id && p.id !== playerId) : [];
-            const teamHtml = myTeam ? `
+            
+            // Liten team banner (Används under själva spelet)
+            const smallTeamHtml = myTeam ? `
                 <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-6 flex flex-col md:flex-row items-center justify-between shadow-sm gap-2">
                     <div class="text-center md:text-left">
                         <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ditt Lag</p>
                         <p class="font-black text-xl mb-1" style="color: ${myTeam.color}">${myTeam.name}</p>
                     </div>
                     <div class="text-center md:text-right text-xs text-slate-400 font-medium">
-                        ${teamMates.length > 0 ? `Lagkamrater:<br><span class="text-white">${teamMates.map(m => m.name).join(', ')}</span>` : 'Du är ensam i laget än så länge.'}
+                        ${teamMates.length > 0 ? `Lagkamrater:<br><span class="text-white">${teamMates.map(m => m.name).join(', ')}</span>` : 'Du är ensam i laget.'}
+                    </div>
+                </div>
+            ` : '';
+
+            // Stor team banner (Används enbart i lobbyn)
+            const lobbyTeamHtml = myTeam ? `
+                <div class="bg-slate-800 p-8 rounded-3xl border-2 border-slate-700 mb-8 text-center shadow-xl">
+                    <p class="text-sm text-slate-400 font-bold uppercase tracking-widest mb-2">Du spelar i</p>
+                    <p class="font-black text-5xl mb-6 drop-shadow-md" style="color: ${myTeam.color}">${myTeam.name}</p>
+                    <div class="bg-slate-900/80 rounded-2xl p-6 inline-block min-w-[250px] border border-slate-700/50">
+                        <p class="text-xs text-slate-500 font-bold uppercase tracking-widest mb-3">Lagkamrater</p>
+                        <p class="text-2xl text-white font-medium">
+                            ${teamMates.length > 0 ? teamMates.map(m => m.name).join('<br>') : '<span class="text-slate-500 italic">Du är ensam än så länge</span>'}
+                        </p>
                     </div>
                 </div>
             ` : '';
 
             if (sessionData.gameState === 'lobby') {
-                appEl.innerHTML = `${teamHtml}
-                    <div class="text-center flex-1 flex flex-col justify-center max-w-lg mx-auto w-full">
-                        <h2 class="text-3xl font-black text-white mb-2">Tjena ${playerData.name}!</h2>
-                        <p class="text-slate-400 font-medium mb-12">Titta upp på skärmen och invänta spelledaren...</p>
+                appEl.innerHTML = `
+                    <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
+                        ${lobbyTeamHtml}
+                        <h2 class="text-4xl font-black text-white mb-4">Hej ${playerData.name}!</h2>
+                        <p class="text-xl text-slate-400 font-medium mb-12">Invänta Spelledaren...</p>
                         
                         <div class="bg-slate-800 p-6 rounded-3xl border-2 border-slate-700 shadow-xl select-none">
                             <p class="text-amber-400 font-bold uppercase tracking-widest text-xs mb-4">Minispel</p>
@@ -183,7 +206,7 @@
                 `).join('');
 
                 if (myAnswer?.locked) {
-                    appEl.innerHTML = `${teamHtml}
+                    appEl.innerHTML = `${smallTeamHtml}
                         <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
                             <p class="text-emerald-400 font-bold mb-2 uppercase tracking-widest text-sm">Svar låst!</p>
                             <h2 class="text-4xl font-black text-white mb-6">"${myAnswer.text}"</h2>
@@ -192,7 +215,7 @@
                         </div>
                     `;
                 } else {
-                    appEl.innerHTML = `${teamHtml}
+                    appEl.innerHTML = `${smallTeamHtml}
                         <div class="flex-1 overflow-y-auto mb-6 pb-4 pr-2">
                             ${cluesHtml}
                         </div>
@@ -212,10 +235,10 @@
                     : myAnswer.correct === true ? `<p class="text-emerald-400 font-black text-5xl mb-1">RÄTT!</p><p class="text-emerald-500 font-bold text-xl">+${myAnswer.points} poäng till laget</p>`
                     : `<p class="text-red-400 font-black text-5xl mb-1">FEL!</p><p class="text-red-500 font-bold text-xl">0 poäng</p>`;
 
-                appEl.innerHTML = `${teamHtml}
+                appEl.innerHTML = `${smallTeamHtml}
                     <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
                         <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Rätt svar var</p>
-                        <h2 class="text-6xl font-black text-white mb-12 drop-shadow-md break-words">${sessionData.revealedAnswer}</h2>
+                        <h2 class="text-5xl md:text-6xl font-black text-white mb-10 drop-shadow-md break-words">${sessionData.revealedAnswer}</h2>
                         
                         <div class="bg-slate-800 p-10 rounded-3xl border-2 border-slate-700 shadow-xl relative overflow-hidden w-full">
                             ${myAnswer ? `<p class="text-slate-400 font-bold text-base mb-6">Du skrev: <span class="text-white">"${myAnswer.text}"</span></p>` : ''}
@@ -226,15 +249,15 @@
             }
             else if (sessionData.gameState === 'finished' || isFrozen) {
                 const myTotalPoints = Object.values(playerData.answers || {}).reduce((sum, a) => sum + (a.points || 0), 0);
-                appEl.innerHTML = `${teamHtml}
+                appEl.innerHTML = `${smallTeamHtml}
                     <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
-                        <h2 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-8">Snyggt jobbat!</h2>
+                        <h2 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-8">Bra kämpat!</h2>
                         <div class="bg-slate-800 p-10 rounded-3xl border border-slate-700 shadow-xl">
                             <p class="text-slate-400 font-bold uppercase tracking-widest text-base mb-2">Du drog in totalt</p>
                             <p class="text-8xl font-black text-white">${myTotalPoints} <span class="text-4xl text-slate-500">p</span></p>
                             <p class="text-slate-400 font-bold text-base mt-6">åt ditt lag</p>
                         </div>
-                        <p class="text-slate-500 mt-12 font-bold text-sm uppercase tracking-widest">Kolla pallen på storskärmen!</p>
+                        <p class="text-slate-500 mt-12 font-bold text-sm uppercase tracking-widest animate-pulse">Kolla pallen på storskärmen!</p>
                     </div>
                 `;
             }
