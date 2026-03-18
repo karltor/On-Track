@@ -15,6 +15,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
         import { getFirestore, doc, collection, onSnapshot, addDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 
         const app = initializeApp({
             apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
@@ -22,15 +23,15 @@
             projectId: "on-track-d77d0"
         });
         const db = getFirestore(app);
+        const auth = getAuth(app);
 
         const urlParams = new URLSearchParams(window.location.search);
         const sessionPin = urlParams.get('session');
-        let playerId = localStorage.getItem(`pa_sparet_player_${sessionPin}`);
-
         if (!sessionPin) {
             document.getElementById('app').innerHTML = '<h1 class="text-center text-red-400 font-bold text-xl">Ingen PIN-kod angiven i länk.</h1>';
         }
 
+        let myUid = null;
         let sessionData = null;
         let allPlayers = [];
         let playerData = null;
@@ -40,10 +41,10 @@
         // --- TÅG MINIGAME LOGIK ---
         let gameScore = 0;
         let highScore = parseInt(localStorage.getItem('train_hs')) || 0;
-        let globalT = 0; // Sträcka från 0.0 till 8.0
-        let trackSwitch = "blue"; // 'blue' (upp) eller 'yellow' (ner)
-        let activePath = "blue"; // Det spår tåget faktiskt är inlåst på just nu
-        let obstacle = { pos: 2.0, x: 600, y: 70 }; // Börjar Top-Right
+        let globalT = 0; 
+        let trackSwitch = "blue"; 
+        let activePath = "blue"; 
+        let obstacle = { pos: 2.0, x: 600, y: 70 }; 
         let baseSpeed = 0.02;
         let speed = baseSpeed;
         let gameLoopId;
@@ -68,34 +69,33 @@
             const seg = Math.floor(gT);
             const t = gT - seg;
             if (pathColor === 'blue') {
-                if(seg === 0) return {x: 300 + 200*t, y: 150}; // S1 Höger
-                if(seg === 1) return getBezier({x:500,y:150}, {x:550,y:150}, {x:550,y:70}, {x:600,y:70}, t); // R_UP
-                if(seg === 2) return {x: 600 + 80*Math.cos(-Math.PI/2 + Math.PI*t), y: 150 + 80*Math.sin(-Math.PI/2 + Math.PI*t)}; // R_ARC_DOWN
-                if(seg === 3) return getBezier({x:600,y:230}, {x:550,y:230}, {x:550,y:150}, {x:500,y:150}, t); // R_DOWN_RET
-                if(seg === 4) return {x: 500 - 200*t, y: 150}; // S2 Vänster
-                if(seg === 5) return getBezier({x:300,y:150}, {x:250,y:150}, {x:250,y:70}, {x:200,y:70}, t); // L_UP
-                if(seg === 6) return {x: 200 + 80*Math.cos(-Math.PI/2 - Math.PI*t), y: 150 + 80*Math.sin(-Math.PI/2 - Math.PI*t)}; // L_ARC_DOWN
-                if(seg === 7) return getBezier({x:200,y:230}, {x:250,y:230}, {x:250,y:150}, {x:300,y:150}, t); // L_DOWN_RET
-            } else { // Yellow
                 if(seg === 0) return {x: 300 + 200*t, y: 150}; 
-                if(seg === 1) return getBezier({x:500,y:150}, {x:550,y:150}, {x:550,y:230}, {x:600,y:230}, t); // R_DOWN
-                if(seg === 2) return {x: 600 + 80*Math.cos(Math.PI/2 - Math.PI*t), y: 150 + 80*Math.sin(Math.PI/2 - Math.PI*t)}; // R_ARC_UP
-                if(seg === 3) return getBezier({x:600,y:70}, {x:550,y:70}, {x:550,y:150}, {x:500,y:150}, t); // R_UP_RET
+                if(seg === 1) return getBezier({x:500,y:150}, {x:550,y:150}, {x:550,y:70}, {x:600,y:70}, t); 
+                if(seg === 2) return {x: 600 + 80*Math.cos(-Math.PI/2 + Math.PI*t), y: 150 + 80*Math.sin(-Math.PI/2 + Math.PI*t)}; 
+                if(seg === 3) return getBezier({x:600,y:230}, {x:550,y:230}, {x:550,y:150}, {x:500,y:150}, t); 
                 if(seg === 4) return {x: 500 - 200*t, y: 150}; 
-                if(seg === 5) return getBezier({x:300,y:150}, {x:250,y:150}, {x:250,y:230}, {x:200,y:230}, t); // L_DOWN
-                if(seg === 6) return {x: 200 + 80*Math.cos(Math.PI/2 + Math.PI*t), y: 150 + 80*Math.sin(Math.PI/2 + Math.PI*t)}; // L_ARC_UP
-                if(seg === 7) return getBezier({x:200,y:70}, {x:250,y:70}, {x:250,y:150}, {x:300,y:150}, t); // L_UP_RET
+                if(seg === 5) return getBezier({x:300,y:150}, {x:250,y:150}, {x:250,y:70}, {x:200,y:70}, t); 
+                if(seg === 6) return {x: 200 + 80*Math.cos(-Math.PI/2 - Math.PI*t), y: 150 + 80*Math.sin(-Math.PI/2 - Math.PI*t)}; 
+                if(seg === 7) return getBezier({x:200,y:230}, {x:250,y:230}, {x:250,y:150}, {x:300,y:150}, t); 
+            } else { 
+                if(seg === 0) return {x: 300 + 200*t, y: 150}; 
+                if(seg === 1) return getBezier({x:500,y:150}, {x:550,y:150}, {x:550,y:230}, {x:600,y:230}, t); 
+                if(seg === 2) return {x: 600 + 80*Math.cos(Math.PI/2 - Math.PI*t), y: 150 + 80*Math.sin(Math.PI/2 - Math.PI*t)}; 
+                if(seg === 3) return getBezier({x:600,y:70}, {x:550,y:70}, {x:550,y:150}, {x:500,y:150}, t); 
+                if(seg === 4) return {x: 500 - 200*t, y: 150}; 
+                if(seg === 5) return getBezier({x:300,y:150}, {x:250,y:150}, {x:250,y:230}, {x:200,y:230}, t); 
+                if(seg === 6) return {x: 200 + 80*Math.cos(Math.PI/2 + Math.PI*t), y: 150 + 80*Math.sin(Math.PI/2 + Math.PI*t)}; 
+                if(seg === 7) return getBezier({x:200,y:70}, {x:250,y:70}, {x:250,y:150}, {x:300,y:150}, t); 
             }
             return {x:300, y:150}; 
         }
 
         function spawnObstacle(side) {
-            // side: 'right' eller 'left'
             const isTop = Math.random() > 0.5;
             if (side === 'right') {
-                obstacle = isTop ? { pos: 2.0, x: 600, y: 70 } : { pos: 2.0, x: 600, y: 230 }; // Top-Right eller Bottom-Right
+                obstacle = isTop ? { pos: 2.0, x: 600, y: 70 } : { pos: 2.0, x: 600, y: 230 }; 
             } else {
-                obstacle = isTop ? { pos: 6.0, x: 200, y: 70 } : { pos: 6.0, x: 200, y: 230 }; // Top-Left eller Bottom-Left
+                obstacle = isTop ? { pos: 6.0, x: 200, y: 70 } : { pos: 6.0, x: 200, y: 230 }; 
             }
         }
 
@@ -109,68 +109,52 @@
             let prevT = globalT;
             globalT += speed;
             
-            // Loopa tillbaka och lås in växelvalet vid mitten
             if (globalT >= 8.0) { globalT -= 8.0; activePath = trackSwitch; }
-            // Lås in växelvalet när vi åker från höger till vänster genom mitten också
             if (prevT < 4.0 && globalT >= 4.0) { activePath = trackSwitch; }
             
-            // Kolla om vi passerar Yttersta kanten HÖGER (T=2.5)
             if (prevT < 2.5 && globalT >= 2.5) {
                 gameScore++; speed += 0.002;
-                spawnObstacle('left'); // Spawna skräp på vänster sida
+                spawnObstacle('left'); 
                 if(gameScore > highScore) { highScore = gameScore; localStorage.setItem('train_hs', highScore); }
             }
-            // Kolla om vi passerar Yttersta kanten VÄNSTER (T=6.5)
             if (prevT < 6.5 && globalT >= 6.5) {
                 gameScore++; speed += 0.002;
-                spawnObstacle('right'); // Spawna skräp på höger sida
+                spawnObstacle('right'); 
                 if(gameScore > highScore) { highScore = gameScore; localStorage.setItem('train_hs', highScore); }
             }
 
-            // Hämta tågets position
             let trainP = getTrainPos(globalT, activePath);
 
-            // Krock? (avstånd mindre än 25px)
             if (Math.hypot(trainP.x - obstacle.x, trainP.y - obstacle.y) < 25) {
                 gameScore = 0; speed = baseSpeed; globalT = 0; activePath = trackSwitch;
-                spawnObstacle('right'); // Börja om
+                spawnObstacle('right'); 
             }
 
-            // RITA UT ALLT
             ctx.clearRect(0, 0, 800, 300);
             
-            // Mitten-rakan (Grå)
             ctx.strokeStyle = "#475569"; ctx.lineWidth = 14; ctx.lineCap = "round";
             ctx.beginPath(); ctx.moveTo(300, 150); ctx.lineTo(500, 150); ctx.stroke();
 
-            // Höger loop BLÅ
             ctx.strokeStyle = "#3b82f6";
             ctx.beginPath(); ctx.moveTo(500, 150); ctx.bezierCurveTo(550, 150, 550, 70, 600, 70); ctx.arc(600, 150, 80, -Math.PI/2, 0); ctx.stroke();
-            // Höger loop GUL
             ctx.strokeStyle = "#eab308";
             ctx.beginPath(); ctx.arc(600, 150, 80, 0, Math.PI/2); ctx.bezierCurveTo(550, 230, 550, 150, 500, 150); ctx.stroke();
 
-            // Vänster loop BLÅ
             ctx.strokeStyle = "#3b82f6";
             ctx.beginPath(); ctx.moveTo(300, 150); ctx.bezierCurveTo(250, 150, 250, 70, 200, 70); ctx.arc(200, 150, 80, -Math.PI/2, Math.PI, true); ctx.stroke();
-            // Vänster loop GUL
             ctx.strokeStyle = "#eab308";
             ctx.beginPath(); ctx.arc(200, 150, 80, Math.PI, Math.PI/2, true); ctx.bezierCurveTo(250, 230, 250, 150, 300, 150); ctx.stroke();
             
-            // Växlar (Röda prickar)
             ctx.fillStyle = "#ef4444";
             ctx.beginPath(); ctx.arc(300, 150, 8, 0, Math.PI*2); ctx.fill();
             ctx.beginPath(); ctx.arc(500, 150, 8, 0, Math.PI*2); ctx.fill();
 
-            // Rita skräp 📦
             ctx.font = "30px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
             ctx.fillText("📦", obstacle.x, obstacle.y);
 
-            // Rita Tåg 🚂
             ctx.font = "40px Arial";
             ctx.fillText("🚂", trainP.x, trainP.y);
             
-            // Uppdatera Poäng i DOM
             const sDisplay = document.getElementById('scoreDisplay');
             if(sDisplay) sDisplay.innerText = gameScore;
             const hsDisplay = document.getElementById('hsDisplay');
@@ -179,47 +163,47 @@
             gameLoopId = requestAnimationFrame(runGame);
         }
 
-        // --- FIREBASE SYNC ---
-        setInterval(() => {
-            if (playerId && sessionData && !finalResults) {
-                updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { lastActive: Date.now() }).catch(() => {});
-            }
-        }, 5000);
-
-        if(sessionPin) {
-            onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
-                if (finalResults) return; 
-                if (docSnap.exists()) {
-                    sessionData = docSnap.data();
-                    if(sessionData.gameState === 'finished') {
-                        computeFinalResults();
-                    } else {
-                        render();
-                    }
-                } else {
-                    if(!finalResults) {
-                        document.getElementById('app').innerHTML = '<h1 class="text-center text-red-400 font-bold text-2xl mt-12">Spelet är stängt av din lärare.</h1>';
-                        localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
-                    }
+        // --- FIREBASE SYNC & AUTH ---
+        signInAnonymously(auth).then(() => {
+            myUid = auth.currentUser.uid;
+            
+            setInterval(() => {
+                if (myUid && sessionData && !finalResults) {
+                    updateDoc(doc(db, "sessions", sessionPin, "players", myUid), { lastActive: Date.now() }).catch(() => {});
                 }
-            });
+            }, 5000);
 
-            onSnapshot(collection(db, "sessions", sessionPin, "players"), (snap) => {
-                if(finalResults) return; 
-                allPlayers = [];
-                snap.forEach(doc => allPlayers.push({id: doc.id, ...doc.data()}));
-                
-                if(playerId) {
-                    playerData = allPlayers.find(p => p.id === playerId);
+            if(sessionPin) {
+                onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
+                    if (finalResults) return; 
+                    if (docSnap.exists()) {
+                        sessionData = docSnap.data();
+                        if(sessionData.gameState === 'finished') {
+                            computeFinalResults();
+                        } else {
+                            render();
+                        }
+                    } else {
+                        if(!finalResults) {
+                            document.getElementById('app').innerHTML = '<h1 class="text-center text-red-400 font-bold text-2xl mt-12">Spelet är stängt av din lärare.</h1>';
+                        }
+                    }
+                });
+
+                onSnapshot(collection(db, "sessions", sessionPin, "players"), (snap) => {
+                    if(finalResults) return; 
+                    allPlayers = [];
+                    snap.forEach(doc => allPlayers.push({id: doc.id, ...doc.data()}));
+                    
+                    playerData = allPlayers.find(p => p.id === myUid);
                     if(playerData?.banned) {
-                        localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
                         document.getElementById('app').innerHTML = '<h1 class="text-center text-red-500 font-black text-3xl mt-20">Utkastad</h1><p class="text-center text-slate-400 mt-2">Din lärare har tagit bort dig från spelet.</p>';
                         return;
                     }
-                }
-                render();
-            });
-        }
+                    render();
+                });
+            }
+        });
 
         function computeFinalResults() {
             if(!playerData || !sessionData) return;
@@ -246,15 +230,16 @@
 
             btn.disabled = true; btn.innerText = "Ansluter...";
             try {
-                const docRef = await addDoc(collection(db, "sessions", sessionPin, "players"), {
-                    name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now()
+                await setDoc(doc(db, "sessions", sessionPin, "players", myUid), {
+                    uid: myUid, name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now()
                 });
-                playerId = docRef.id;
-                localStorage.setItem(`pa_sparet_player_${sessionPin}`, playerId);
-                playerData = { id: playerId, name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now() };
+                playerData = { id: myUid, uid: myUid, name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now() };
                 allPlayers.push(playerData);
                 render();
-            } catch { alert("Kunde inte ansluta."); btn.disabled = false; btn.innerText = "Gå med"; }
+            } catch { 
+                alert("Kunde inte ansluta."); 
+                btn.disabled = false; btn.innerText = "Gå med"; 
+            }
         };
 
         window.lockAnswer = async (e) => {
@@ -265,10 +250,13 @@
             
             btn.disabled = true; btn.innerText = "Låser...";
             try {
-                await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), {
+                await updateDoc(doc(db, "sessions", sessionPin, "players", myUid), {
                     [`answers.${sessionData.currentBoardIndex}`]: { text: answerText, clueIndex: sessionData.currentClueIndex, locked: true, correct: null, points: 0, status: null }
                 });
-            } catch { alert("Fel vid låsning!"); btn.disabled = false; btn.innerText = "Lås in mitt svar!"; }
+            } catch { 
+                alert("Fel vid låsning!"); 
+                btn.disabled = false; btn.innerText = "Lås in mitt svar!"; 
+            }
         };
 
         function render() {
@@ -277,10 +265,12 @@
             if (finalResults) {
                 const { myTotalPoints, teamTotal, teamAvg, myTeam } = finalResults;
                 const teamBadge = myTeam ? `<div class="px-4 py-2 rounded-full text-sm font-bold mb-8 mx-auto w-max" style="background-color: ${myTeam.color}20; color: ${myTeam.color}; border: 1px solid ${myTeam.color}40">${myTeam.name}</div>` : '';
+                
                 appEl.innerHTML = `
                     <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
                         ${teamBadge}
                         <h2 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-8">Bra kämpat!</h2>
+                        
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
                             <div class="bg-slate-800 p-8 rounded-3xl border border-slate-700 shadow-xl">
                                 <p class="text-slate-400 font-bold uppercase tracking-widest text-xs mb-2">Du bidrog med</p>
@@ -292,6 +282,7 @@
                                 <p class="text-slate-500 text-sm">Lagets totala poäng: ${teamTotal}</p>
                             </div>
                         </div>
+                        
                         <p class="text-slate-500 mt-4 font-bold text-sm uppercase tracking-widest animate-pulse">Kolla in prispallen på storskärmen!</p>
                     </div>
                 `;
@@ -300,7 +291,7 @@
 
             if (!sessionData) return;
 
-            if (!playerId || !playerData) {
+            if (!myUid || !playerData) {
                 appEl.innerHTML = `
                     <div class="text-center mb-8">
                         <h1 class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-2 font-serif">På Rätt Spår</h1>
@@ -319,11 +310,10 @@
             let lobbyTeamHtml = '';
 
             if (myTeam) {
-                const teamMates = allPlayers.filter(p => p.teamId === myTeam.id && p.id !== playerId && !p.banned);
+                const teamMates = allPlayers.filter(p => p.teamId === myTeam.id && p.id !== myUid && !p.banned);
                 
-                // Formaterad laglista exakt enligt önskemål!
                 let playerListHtml = teamMates.map(m => `<p class="font-bold text-2xl text-white mb-2">${m.name}</p>`).join('');
-                playerListHtml += `<p class="font-bold text-2xl text-slate-400 mb-2">${playerData.name} (Du)</p>`;
+                playerListHtml += `<p class="font-black text-2xl text-amber-400 border-t border-slate-700/50 pt-3 mt-3">${playerData.name} (Du)</p>`;
 
                 smallTeamHtml = `
                     <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-6 flex flex-col md:flex-row items-center justify-between shadow-sm gap-2">
@@ -351,7 +341,6 @@
             if (sessionData.gameState === 'lobby') {
                 appEl.innerHTML = `
                     <div class="flex-1 flex flex-col lg:flex-row items-center justify-center gap-8 w-full max-w-6xl mx-auto">
-                        
                         <div class="w-full lg:w-1/3 flex justify-center">
                             ${myTeam ? lobbyTeamHtml : `
                                 <div class="text-center">
@@ -362,6 +351,8 @@
                         </div>
                         
                         <div class="w-full lg:w-2/3 flex flex-col items-center">
+                            <p class="text-xl text-amber-400 font-bold animate-pulse uppercase tracking-widest mb-8">Invänta Spelledaren...</p>
+                            
                             <div class="bg-slate-800 p-6 md:p-8 rounded-3xl border-2 border-slate-700 shadow-2xl select-none w-full max-w-3xl">
                                 <div class="flex justify-between items-center mb-6">
                                     <div>
@@ -373,4 +364,74 @@
                                 
                                 <canvas id="gameCanvas" width="800" height="300" class="w-full bg-[#0f172a] rounded-2xl mb-6 border-4 border-slate-950" style="touch-action: none;"></canvas>
                                 
-                                <button id="switch
+                                <button id="switchBtn" onclick="toggleSwitch()" class="w-full py-4 border-b-4 border-blue-700 bg-blue-500 hover:bg-blue-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none">
+                                    VÄXEL: BLÅ (UPP) ↗️
+                                </button>
+                                
+                                <p class="text-slate-500 text-sm font-bold text-center mt-6">Ditt highscore: <span id="hsDisplay" class="text-white">${highScore}</span></p>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                
+                cancelAnimationFrame(gameLoopId);
+                gameLoopId = requestAnimationFrame(runGame);
+            } 
+            else if (sessionData.gameState === 'playing') {
+                const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
+                const activeClueIndex = sessionData.currentClueIndex;
+                const myAnswer = playerData.answers?.[sessionData.currentBoardIndex];
+
+                let cluesHtml = currentBoard.clues.slice(0, activeClueIndex + 1).map((clue, i) => `
+                    <div class="bg-slate-800 p-4 md:p-6 rounded-xl border border-slate-700 mb-3 shadow-md flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
+                        <span class="bg-slate-900 text-amber-500 text-sm font-black px-4 py-2 rounded-lg shrink-0 uppercase tracking-wider w-max">${POINTS[i]} poäng</span>
+                        <p class="text-lg md:text-xl font-medium text-slate-100 leading-relaxed">${clue}</p>
+                    </div>
+                `).join('');
+
+                if (myAnswer?.locked) {
+                    appEl.innerHTML = `${smallTeamHtml}
+                        <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
+                            <p class="text-emerald-400 font-bold mb-2 uppercase tracking-widest text-sm">Svar låst!</p>
+                            <h2 class="text-4xl md:text-5xl font-black text-white mb-6">"${myAnswer.text}"</h2>
+                            <p class="text-slate-400 text-base">Låst på <span class="text-amber-400 font-bold">${POINTS[myAnswer.clueIndex]}p</span>-nivån.</p>
+                            <div class="mt-12 w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                        </div>
+                    `;
+                } else {
+                    appEl.innerHTML = `${smallTeamHtml}
+                        <div class="flex-1 overflow-y-auto mb-6 pb-4 pr-2">
+                            ${cluesHtml}
+                        </div>
+                        <form onsubmit="lockAnswer(event)" class="bg-slate-800 p-4 md:p-6 rounded-2xl border border-slate-700 sticky bottom-4 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] flex flex-col md:flex-row gap-3">
+                            <input type="text" id="answerInput" class="flex-1 bg-slate-900 border-2 border-slate-600 rounded-xl px-6 py-4 text-white font-bold text-xl md:text-2xl focus:border-amber-500 focus:outline-none transition-colors placeholder:text-slate-600" placeholder="Skriv ditt svar..." required autocomplete="off">
+                            <button type="submit" id="lockBtn" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-10 py-4 rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-xl md:text-2xl whitespace-nowrap">Lås in mitt svar!</button>
+                        </form>
+                    `;
+                }
+            }
+            else if (sessionData.gameState === 'revealing') {
+                const myAnswer = playerData.answers?.[sessionData.currentBoardIndex];
+                
+                let resultHtml = !myAnswer ? `<p class="text-slate-400 font-black text-xl">Du svarade tyvärr inte.</p>`
+                    : myAnswer.correct === null ? `<p class="text-amber-400 font-black text-2xl animate-pulse">Läraren rättar ditt svar...</p>`
+                    : myAnswer.status === 'minus' ? `<p class="text-red-400 font-black text-4xl mb-1">STRAFF!</p><p class="text-red-500 font-bold text-lg">-5 poäng till laget</p>`
+                    : myAnswer.correct === true ? `<p class="text-emerald-400 font-black text-5xl mb-1">RÄTT!</p><p class="text-emerald-500 font-bold text-xl">+${myAnswer.points} poäng till laget</p>`
+                    : `<p class="text-red-400 font-black text-5xl mb-1">FEL!</p><p class="text-red-500 font-bold text-xl">0 poäng</p>`;
+
+                appEl.innerHTML = `${smallTeamHtml}
+                    <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
+                        <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Rätt svar var</p>
+                        <h2 class="text-5xl md:text-6xl font-black text-white mb-10 drop-shadow-md break-words">${sessionData.revealedAnswer}</h2>
+                        
+                        <div class="bg-slate-800 p-10 rounded-3xl border-2 border-slate-700 shadow-xl relative overflow-hidden w-full">
+                            ${myAnswer ? `<p class="text-slate-400 font-bold text-base mb-6">Du skrev: <span class="text-white">"${myAnswer.text}"</span></p>` : ''}
+                            ${resultHtml}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
