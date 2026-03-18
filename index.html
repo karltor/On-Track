@@ -327,7 +327,7 @@
 
         window.startSession = async (index) => {
             const selectedBoard = boards[index];
-            const pin = Math.random().toString(36).substring(2, 8).toUpperCase();
+            const pin = Math.floor(1000 + Math.random() * 9000).toString();
             const adminToken = Math.random().toString(36).substring(2, 15);
 
             const sessionData = {
