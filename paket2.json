@@ -1,0 +1,55 @@
+{
+  "title": "Fysik & Kemi - På Spåret (Atomfysik)",
+  "boards": [
+    {
+      "answer": "Periodiska systemet",
+      "clues": [
+        "10p: Vi söker den strukturella matris där elementen ordnas efter stigande effektiv kärnladdning och där trender i elektronegativitet dikteras av rader och kolumner.",
+        "8p: Ryska kemisten Dmitrij Mendelejev anses vara arkitekten bakom detta system som förutspådde okända element.",
+        "6p: Här sorteras allt från ädelgaser till alkalimetaller i grupper och perioder.",
+        "4p: En tabell där alla kända grundämnen är uppställda efter sitt atomnummer.",
+        "2p: Uppställningen där du hittar förkortningar som Au, Fe och O."
+      ]
+    },
+    {
+      "answer": "Väte",
+      "clues": [
+        "10p: Vi söker det kosmiska ur-elementet vars joniseringspotential satte standarden för kvantmekanisk modellering av orbitaler.",
+        "8p: Som bränsle i stjärnornas fusion är detta ämne källan till nästan all energi i kosmos.",
+        "6p: Det är det enda grundämnet som i sin vanligaste form helt saknar neutroner i kärnan.",
+        "4p: Det lättaste grundämnet som finns och det första i periodiska systemet.",
+        "2p: Gasen med den kemiska beteckningen H."
+      ]
+    },
+    {
+      "answer": "Isotop",
+      "clues": [
+        "10p: Vi söker nuklider som upptar samma position i det kemiska systemet men som uppvisar diskreta skillnader i sin bindningsenergi per nukleon.",
+        "8p: Skillnaden mellan dessa ligger i antalet oladdade partiklar i atomkärnan.",
+        "6p: Kol-12 och Kol-14 är två kända exempel på detta fenomen inom samma grundämne.",
+        "4p: Atomer som har samma antal protoner men olika antal neutroner.",
+        "2p: En variant av ett grundämne med olika tung kärna."
+      ]
+    },
+    {
+      "answer": "Alfasönderfall",
+      "clues": [
+        "10p: Vi söker den tunneleffekt-drivna emissionen av en starkt bunden kvartett som dramatiskt sänker modersystemets Coulomb-barriär.",
+        "8p: Vid denna händelse minskar atomnumret med två och masstalet med fyra, vilket skapar ett nytt grundämne.",
+        "6p: Denna typ av strålning har kort räckvidd och kan stoppas av ett enkelt papper, men är farlig inuti kroppen.",
+        "4p: En form av radioaktivitet där en heliumkärna skjuts ut från en tung instabil atom.",
+        "2p: Partikelstrålningen som består av just heliumkärnor."
+      ]
+    },
+    {
+      "answer": "Halveringstid",
+      "clues": [
+        "10p: Vi söker den stokastiska konstanten som definierar den temporala punkten då den negativa tidsderivatan av antalet nuklider når hälften av sitt initialvärde.",
+        "8p: Begreppet används inom arkeologin för att datera organiska fynd med hjälp av radiokolmetoden.",
+        "6p: Efter tre sådana perioder återstår endast 12,5 % av den ursprungliga mängden radioaktivt material.",
+        "4p: Den tid det tar för hälften av alla atomkärnor i ett prov att sönderfalla.",
+        "2p: Tiden det tar för en radioaktiv substans att bli hälften så stark."
+      ]
+    }
+  ]
+}
