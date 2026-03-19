@@ -57,7 +57,8 @@
         let trackSwitch = "blue"; 
         let activePath = "blue"; 
         let obstacle = { pos: 2.0, x: 600, y: 70 }; 
-        let baseSpeed = 0.02;
+        // FIX: Minskat baseSpeed med ca 1/3
+        let baseSpeed = 0.013; 
         let speed = baseSpeed;
         let gameLoopId;
 
@@ -202,8 +203,23 @@
 
             onSnapshot(collection(db, "sessions", sessionPin, "players"), (snap) => {
                 if(finalResults) return; 
-                allPlayers = [];
-                snap.forEach(doc => allPlayers.push({id: doc.id, ...doc.data()}));
+                
+                const newPlayers = [];
+                snap.forEach(doc => newPlayers.push({id: doc.id, ...doc.data()}));
+                
+                // FIX: Om allPlayers har laddats tidigare, kontrollera om den ENDA ändringen 
+                // var `lastActive`. I så fall slipper vi re-rendera hela skärmen!
+                let shouldRender = true;
+                if (allPlayers.length > 0 && allPlayers.length === newPlayers.length) {
+                    const stripTime = p => { const { lastActive, ...rest } = p; return JSON.stringify(rest); };
+                    const oldData = allPlayers.map(stripTime).sort();
+                    const newData = newPlayers.map(stripTime).sort();
+                    if (JSON.stringify(oldData) === JSON.stringify(newData)) {
+                        shouldRender = false;
+                    }
+                }
+
+                allPlayers = newPlayers;
                 
                 if(playerId) {
                     playerData = allPlayers.find(p => p.id === playerId);
@@ -213,7 +229,7 @@
                         return;
                     }
                 }
-                render();
+                if (shouldRender) render();
             });
         }
 
@@ -242,7 +258,6 @@
 
             btn.disabled = true; btn.innerText = "Ansluter...";
             try {
-                // TILLBAKA TILL GAMLA GOA ADDDOC (Ingen Auth)
                 const docRef = await addDoc(collection(db, "sessions", sessionPin, "players"), {
                     name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now()
                 });
@@ -279,6 +294,14 @@
 
         function render() {
             const appEl = document.getElementById('app');
+
+            // FIX: Spara nuvarande fokus och input innan skärmen ritas om 
+            // så att man inte tappar bort det man skriver när läraren t.ex. låser upp ny ledtråd!
+            const activeId = document.activeElement ? document.activeElement.id : null;
+            const answerInputEl = document.getElementById('answerInput');
+            const savedAnswer = answerInputEl ? answerInputEl.value : '';
+            const nameInputEl = document.getElementById('playerName');
+            const savedName = nameInputEl ? nameInputEl.value : '';
 
             if (finalResults) {
                 const { myTotalPoints, teamTotal, teamAvg, myTeam } = finalResults;
@@ -320,135 +343,151 @@
                         <button type="submit" id="joinBtn" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-black text-lg py-4 rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50">Gå med i spelet</button>
                     </form>
                 `;
-                return;
-            }
+            } else {
+                const myTeam = sessionData.teams?.find(t => t.id === playerData.teamId);
+                let smallTeamHtml = '';
+                let lobbyTeamHtml = '';
 
-            const myTeam = sessionData.teams?.find(t => t.id === playerData.teamId);
-            let smallTeamHtml = '';
-            let lobbyTeamHtml = '';
+                if (myTeam) {
+                    const teamMates = allPlayers.filter(p => p.teamId === myTeam.id && p.id !== playerId && !p.banned);
+                    
+                    let playerListHtml = teamMates.map(m => `<p class="font-bold text-2xl text-white mb-3">${m.name}</p>`).join('');
+                    playerListHtml += `<p class="font-black text-2xl text-amber-400 border-t border-slate-700/50 pt-3 mt-3">${playerData.name} (Du)</p>`;
 
-            if (myTeam) {
-                const teamMates = allPlayers.filter(p => p.teamId === myTeam.id && p.id !== playerId && !p.banned);
-                
-                let playerListHtml = teamMates.map(m => `<p class="font-bold text-2xl text-white mb-3">${m.name}</p>`).join('');
-                playerListHtml += `<p class="font-black text-2xl text-amber-400 border-t border-slate-700/50 pt-3 mt-3">${playerData.name} (Du)</p>`;
-
-                smallTeamHtml = `
-                    <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-6 flex flex-col md:flex-row items-center justify-between shadow-sm gap-2">
-                        <div class="text-center md:text-left">
-                            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ditt Lag</p>
-                            <p class="font-black text-xl mb-1" style="color: ${myTeam.color}">${myTeam.name}</p>
-                        </div>
-                        <div class="text-center md:text-right text-xs text-slate-400 font-medium">
-                            ${teamMates.length > 0 ? `Lagkamrater:<br><span class="text-white">${teamMates.map(m => m.name).join(', ')}</span>` : 'Du är ensam i laget.'}
-                        </div>
-                    </div>
-                `;
-
-                lobbyTeamHtml = `
-                    <div class="bg-slate-800 p-8 rounded-3xl border-2 border-slate-700 shadow-xl w-full max-w-sm mb-6 mx-auto">
-                        <p class="text-sm text-slate-400 font-bold uppercase tracking-widest mb-2 text-center">Ditt lag</p>
-                        <p class="font-black text-4xl md:text-5xl mb-6 drop-shadow-md text-center" style="color: ${myTeam.color}">${myTeam.name}</p>
-                        <div class="bg-slate-900/80 rounded-2xl p-6 w-full border border-slate-700/50 text-center">
-                            ${playerListHtml}
-                        </div>
-                    </div>
-                `;
-            }
-
-            if (sessionData.gameState === 'lobby') {
-                appEl.innerHTML = `
-                    <div class="flex-1 flex flex-col lg:flex-row items-center justify-center gap-8 w-full max-w-6xl mx-auto">
-                        
-                        <div class="w-full lg:w-1/3 flex justify-center">
-                            ${myTeam ? lobbyTeamHtml : `
-                                <div class="text-center">
-                                    <h2 class="text-5xl font-black text-white mb-4">Hej ${playerData.name}!</h2>
-                                    <p class="text-xl text-slate-400 font-medium">Väntar på att läraren ska dela in lag...</p>
-                                </div>
-                            `}
-                        </div>
-                        
-                        <div class="w-full lg:w-2/3 flex flex-col items-center">
-                            <p class="text-xl text-amber-400 font-bold animate-pulse uppercase tracking-widest mb-8">Invänta Spelledaren...</p>
-                            
-                            <div class="bg-slate-800 p-6 md:p-8 rounded-3xl border-2 border-slate-700 shadow-2xl select-none w-full max-w-3xl">
-                                <div class="flex justify-between items-center mb-6">
-                                    <div>
-                                        <p class="text-amber-400 font-bold uppercase tracking-widest text-xs mb-1">Minispel</p>
-                                        <h3 class="text-xl font-bold text-white">Akta dig för lådorna!</h3>
-                                    </div>
-                                    <p class="text-6xl font-black text-emerald-400" id="scoreDisplay">${gameScore}</p>
-                                </div>
-                                
-                                <canvas id="gameCanvas" width="800" height="300" class="w-full bg-[#0f172a] rounded-2xl mb-6 border-4 border-slate-950" style="touch-action: none;"></canvas>
-                                
-                                <button id="switchBtn" onclick="toggleSwitch()" class="w-full py-4 border-b-4 border-blue-700 bg-blue-500 hover:bg-blue-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none">
-                                    VÄXEL: BLÅ (UPP) ↗️
-                                </button>
-                                
-                                <p class="text-slate-500 text-sm font-bold text-center mt-6">Ditt highscore: <span id="hsDisplay" class="text-white">${highScore}</span></p>
+                    smallTeamHtml = `
+                        <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-6 flex flex-col md:flex-row items-center justify-between shadow-sm gap-2">
+                            <div class="text-center md:text-left">
+                                <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ditt Lag</p>
+                                <p class="font-black text-xl mb-1" style="color: ${myTeam.color}">${myTeam.name}</p>
+                            </div>
+                            <div class="text-center md:text-right text-xs text-slate-400 font-medium">
+                                ${teamMates.length > 0 ? `Lagkamrater:<br><span class="text-white">${teamMates.map(m => m.name).join(', ')}</span>` : 'Du är ensam i laget.'}
                             </div>
                         </div>
-                    </div>
-                `;
-                
-                cancelAnimationFrame(gameLoopId);
-                gameLoopId = requestAnimationFrame(runGame);
-            } 
-            else if (sessionData.gameState === 'playing') {
-                const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
-                const activeClueIndex = sessionData.currentClueIndex;
-                const myAnswer = playerData.answers?.[sessionData.currentBoardIndex];
+                    `;
 
-                let cluesHtml = currentBoard.clues.slice(0, activeClueIndex + 1).map((clue, i) => `
-                    <div class="bg-slate-800 p-4 md:p-6 rounded-xl border border-slate-700 mb-3 shadow-md flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
-                        <span class="bg-slate-900 text-amber-500 text-sm font-black px-4 py-2 rounded-lg shrink-0 uppercase tracking-wider w-max">${POINTS[i]} poäng</span>
-                        <p class="text-lg md:text-xl font-medium text-slate-100 leading-relaxed">${clue}</p>
-                    </div>
-                `).join('');
-
-                if (myAnswer?.locked) {
-                    appEl.innerHTML = `${smallTeamHtml}
-                        <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
-                            <p class="text-emerald-400 font-bold mb-2 uppercase tracking-widest text-sm">Svar låst!</p>
-                            <h2 class="text-4xl md:text-5xl font-black text-white mb-6">"${myAnswer.text}"</h2>
-                            <p class="text-slate-400 text-base">Låst på <span class="text-amber-400 font-bold">${POINTS[myAnswer.clueIndex]}p</span>-nivån.</p>
-                            <div class="mt-12 w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                    lobbyTeamHtml = `
+                        <div class="bg-slate-800 p-8 rounded-3xl border-2 border-slate-700 shadow-xl w-full max-w-sm mb-6 mx-auto">
+                            <p class="text-sm text-slate-400 font-bold uppercase tracking-widest mb-2 text-center">Ditt lag</p>
+                            <p class="font-black text-4xl md:text-5xl mb-6 drop-shadow-md text-center" style="color: ${myTeam.color}">${myTeam.name}</p>
+                            <div class="bg-slate-900/80 rounded-2xl p-6 w-full border border-slate-700/50 text-center">
+                                ${playerListHtml}
+                            </div>
                         </div>
                     `;
-                } else {
-                    appEl.innerHTML = `${smallTeamHtml}
-                        <div class="flex-1 overflow-y-auto mb-6 pb-4 pr-2">
-                            ${cluesHtml}
+                }
+
+                if (sessionData.gameState === 'lobby') {
+                    appEl.innerHTML = `
+                        <div class="flex-1 flex flex-col lg:flex-row items-center justify-center gap-8 w-full max-w-6xl mx-auto">
+                            
+                            <div class="w-full lg:w-1/3 flex justify-center">
+                                ${myTeam ? lobbyTeamHtml : `
+                                    <div class="text-center">
+                                        <h2 class="text-5xl font-black text-white mb-4">Hej ${playerData.name}!</h2>
+                                        <p class="text-xl text-slate-400 font-medium">Väntar på att läraren ska dela in lag...</p>
+                                    </div>
+                                `}
+                            </div>
+                            
+                            <div class="w-full lg:w-2/3 flex flex-col items-center">
+                                <p class="text-xl text-amber-400 font-bold animate-pulse uppercase tracking-widest mb-8">Invänta Spelledaren...</p>
+                                
+                                <div class="bg-slate-800 p-6 md:p-8 rounded-3xl border-2 border-slate-700 shadow-2xl select-none w-full max-w-3xl">
+                                    <div class="flex justify-between items-center mb-6">
+                                        <div>
+                                            <p class="text-amber-400 font-bold uppercase tracking-widest text-xs mb-1">Minispel</p>
+                                            <h3 class="text-xl font-bold text-white">Akta dig för lådorna!</h3>
+                                        </div>
+                                        <p class="text-6xl font-black text-emerald-400" id="scoreDisplay">${gameScore}</p>
+                                    </div>
+                                    
+                                    <canvas id="gameCanvas" width="800" height="300" class="w-full bg-[#0f172a] rounded-2xl mb-6 border-4 border-slate-950" style="touch-action: none;"></canvas>
+                                    
+                                    <button id="switchBtn" onclick="toggleSwitch()" class="w-full py-4 border-b-4 border-blue-700 bg-blue-500 hover:bg-blue-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none">
+                                        VÄXEL: BLÅ (UPP) ↗️
+                                    </button>
+                                    
+                                    <p class="text-slate-500 text-sm font-bold text-center mt-6">Ditt highscore: <span id="hsDisplay" class="text-white">${highScore}</span></p>
+                                </div>
+                            </div>
                         </div>
-                        <form onsubmit="lockAnswer(event)" class="bg-slate-800 p-4 md:p-6 rounded-2xl border border-slate-700 sticky bottom-4 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] flex flex-col md:flex-row gap-3">
-                            <input type="text" id="answerInput" class="flex-1 bg-slate-900 border-2 border-slate-600 rounded-xl px-6 py-4 text-white font-bold text-xl md:text-2xl focus:border-amber-500 focus:outline-none transition-colors placeholder:text-slate-600" placeholder="Skriv ditt svar..." required autocomplete="off">
-                            <button type="submit" id="lockBtn" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-10 py-4 rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-xl md:text-2xl whitespace-nowrap">Lås in mitt svar!</button>
-                        </form>
+                    `;
+                    
+                    cancelAnimationFrame(gameLoopId);
+                    gameLoopId = requestAnimationFrame(runGame);
+                } 
+                else if (sessionData.gameState === 'playing') {
+                    const currentBoard = sessionData.boards[sessionData.currentBoardIndex];
+                    const activeClueIndex = sessionData.currentClueIndex;
+                    const myAnswer = playerData.answers?.[sessionData.currentBoardIndex];
+
+                    let cluesHtml = currentBoard.clues.slice(0, activeClueIndex + 1).map((clue, i) => `
+                        <div class="bg-slate-800 p-4 md:p-6 rounded-xl border border-slate-700 mb-3 shadow-md flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
+                            <span class="bg-slate-900 text-amber-500 text-sm font-black px-4 py-2 rounded-lg shrink-0 uppercase tracking-wider w-max">${POINTS[i]} poäng</span>
+                            <p class="text-lg md:text-xl font-medium text-slate-100 leading-relaxed">${clue}</p>
+                        </div>
+                    `).join('');
+
+                    if (myAnswer?.locked) {
+                        appEl.innerHTML = `${smallTeamHtml}
+                            <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
+                                <p class="text-emerald-400 font-bold mb-2 uppercase tracking-widest text-sm">Svar låst!</p>
+                                <h2 class="text-4xl md:text-5xl font-black text-white mb-6">"${myAnswer.text}"</h2>
+                                <p class="text-slate-400 text-base">Låst på <span class="text-amber-400 font-bold">${POINTS[myAnswer.clueIndex]}p</span>-nivån.</p>
+                                <div class="mt-12 w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                            </div>
+                        `;
+                    } else {
+                        appEl.innerHTML = `${smallTeamHtml}
+                            <div class="flex-1 overflow-y-auto mb-6 pb-4 pr-2">
+                                ${cluesHtml}
+                            </div>
+                            <form onsubmit="lockAnswer(event)" class="bg-slate-800 p-4 md:p-6 rounded-2xl border border-slate-700 sticky bottom-4 shadow-[0_-10px_30px_rgba(0,0,0,0.3)] flex flex-col md:flex-row gap-3">
+                                <input type="text" id="answerInput" class="flex-1 bg-slate-900 border-2 border-slate-600 rounded-xl px-6 py-4 text-white font-bold text-xl md:text-2xl focus:border-amber-500 focus:outline-none transition-colors placeholder:text-slate-600" placeholder="Skriv ditt svar..." required autocomplete="off">
+                                <button type="submit" id="lockBtn" class="bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black px-10 py-4 rounded-xl shadow-lg transition-transform active:scale-95 disabled:opacity-50 text-xl md:text-2xl whitespace-nowrap">Lås in mitt svar!</button>
+                            </form>
+                        `;
+                    }
+                }
+                else if (sessionData.gameState === 'revealing') {
+                    const myAnswer = playerData.answers?.[sessionData.currentBoardIndex];
+                    
+                    let resultHtml = !myAnswer ? `<p class="text-slate-400 font-black text-xl">Du svarade tyvärr inte.</p>`
+                        : myAnswer.correct === null ? `<p class="text-amber-400 font-black text-2xl animate-pulse">Läraren rättar ditt svar...</p>`
+                        : myAnswer.status === 'minus' ? `<p class="text-red-400 font-black text-4xl mb-1">STRAFF!</p><p class="text-red-500 font-bold text-lg">-5 poäng till laget</p>`
+                        : myAnswer.correct === true ? `<p class="text-emerald-400 font-black text-5xl mb-1">RÄTT!</p><p class="text-emerald-500 font-bold text-xl">+${myAnswer.points} poäng till laget</p>`
+                        : `<p class="text-red-400 font-black text-5xl mb-1">FEL!</p><p class="text-red-500 font-bold text-xl">0 poäng</p>`;
+
+                    appEl.innerHTML = `${smallTeamHtml}
+                        <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
+                            <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Rätt svar var</p>
+                            <h2 class="text-5xl md:text-6xl font-black text-white mb-10 drop-shadow-md break-words">${sessionData.revealedAnswer}</h2>
+                            
+                            <div class="bg-slate-800 p-10 rounded-3xl border-2 border-slate-700 shadow-xl relative overflow-hidden w-full">
+                                ${myAnswer ? `<p class="text-slate-400 font-bold text-base mb-6">Du skrev: <span class="text-white">"${myAnswer.text}"</span></p>` : ''}
+                                ${resultHtml}
+                            </div>
+                        </div>
                     `;
                 }
             }
-            else if (sessionData.gameState === 'revealing') {
-                const myAnswer = playerData.answers?.[sessionData.currentBoardIndex];
-                
-                let resultHtml = !myAnswer ? `<p class="text-slate-400 font-black text-xl">Du svarade tyvärr inte.</p>`
-                    : myAnswer.correct === null ? `<p class="text-amber-400 font-black text-2xl animate-pulse">Läraren rättar ditt svar...</p>`
-                    : myAnswer.status === 'minus' ? `<p class="text-red-400 font-black text-4xl mb-1">STRAFF!</p><p class="text-red-500 font-bold text-lg">-5 poäng till laget</p>`
-                    : myAnswer.correct === true ? `<p class="text-emerald-400 font-black text-5xl mb-1">RÄTT!</p><p class="text-emerald-500 font-bold text-xl">+${myAnswer.points} poäng till laget</p>`
-                    : `<p class="text-red-400 font-black text-5xl mb-1">FEL!</p><p class="text-red-500 font-bold text-xl">0 poäng</p>`;
 
-                appEl.innerHTML = `${smallTeamHtml}
-                    <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
-                        <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Rätt svar var</p>
-                        <h2 class="text-5xl md:text-6xl font-black text-white mb-10 drop-shadow-md break-words">${sessionData.revealedAnswer}</h2>
-                        
-                        <div class="bg-slate-800 p-10 rounded-3xl border-2 border-slate-700 shadow-xl relative overflow-hidden w-full">
-                            ${myAnswer ? `<p class="text-slate-400 font-bold text-base mb-6">Du skrev: <span class="text-white">"${myAnswer.text}"</span></p>` : ''}
-                            ${resultHtml}
-                        </div>
-                    </div>
-                `;
+            // FIX: Återställ det man höll på att skriva och sätt fokus tillbaka där markören var
+            if (activeId === 'answerInput') {
+                const newAnswerInput = document.getElementById('answerInput');
+                if (newAnswerInput) {
+                    newAnswerInput.value = savedAnswer;
+                    newAnswerInput.focus();
+                    newAnswerInput.setSelectionRange(newAnswerInput.value.length, newAnswerInput.value.length);
+                }
+            } else if (activeId === 'playerName') {
+                const newNameInput = document.getElementById('playerName');
+                if (newNameInput) {
+                    newNameInput.value = savedName;
+                    newNameInput.focus();
+                    newNameInput.setSelectionRange(newNameInput.value.length, newNameInput.value.length);
+                }
             }
         }
     </script>
