@@ -2,28 +2,30 @@
 let gameScore = 0;
 let highScore = parseInt(localStorage.getItem('train_hs')) || 0;
 
-// Geometri-konstanter
 const cx = 400; // Mitten av canvas X
 const cy = 150; // Mitten av canvas Y
-const a = 50;   // Bas-radie (något mindre nu när vi sträcker ut den)
-const scaleX = 2.5; // Gör den 2.5 gånger bredare än vad den är hög (ellips)
 
-// Spårens radier (exakt mellan ringarna)
-const rInner = a * 1.25; 
-const rOuter = a * 1.75; 
+// De exakta banorna tåget åker på (Rx och Ry definierar ellipsen)
+const pathInner = { rx: 165, ry: 55 };
+const pathOuter = { rx: 215, ry: 105 };
+
+// Gränsväggarna (Gapet mellan dem är alltid exakt 50 i både x och y-led nu)
+const wallInner = { rx: 140, ry: 30 };
+const wallMid   = { rx: 190, ry: 80 };
+const wallOuter = { rx: 240, ry: 130 };
 
 let theta = Math.PI / 2; // Starta rakt ner i mitten
-let baseSpeed = 0.01; // Halverad starthastighet
-let speed = baseSpeed;
+let baseVelocity = 2.5;  // Pixlar per frame istället för vinkelhastighet
+let velocity = baseVelocity;
 
 let targetTrack = 'inner';
-let currentR = rInner;
+let currentRx = pathInner.rx;
+let currentRy = pathInner.ry;
 
-let bomb = { r: rOuter, angle: Math.PI / 2 }; 
+let bomb = { track: 'outer', angle: Math.PI / 2 }; 
 let gameLoopId = null;
 let isPlaying = false;
 
-// Hjälpfunktion för att synka knappen
 function updateButtonUI() {
     const btn = document.getElementById('switchBtn');
     if(btn) {
@@ -44,20 +46,19 @@ export function toggleSwitch() {
 
 function spawnBomb() {
     const isOuter = Math.random() > 0.5;
-    const r = isOuter ? rOuter : rInner;
+    const track = isOuter ? 'outer' : 'inner';
     
-    // Begränsa till nedre bottenmitten (60 till 120 grader)
-    // 60 grader = PI/3, 120 grader = 2*PI/3
+    // Begränsa till nedre bottenmitten (mellan 60 och 120 grader)
     const minAngle = Math.PI / 3;
     const maxAngle = (2 * Math.PI) / 3;
     const angle = minAngle + Math.random() * (maxAngle - minAngle);
     
-    bomb = { r, angle };
+    bomb = { track, angle };
 }
 
 export function startMinigame() {
     isPlaying = true;
-    updateButtonUI(); // Sätt rätt text på knappen direkt när spelet startar
+    updateButtonUI(); 
     if (gameLoopId) cancelAnimationFrame(gameLoopId);
     runGame();
 }
@@ -77,8 +78,11 @@ function runGame() {
     if(!canvas) return;
     const ctx = canvas.getContext('2d');
     
+    // FIX: Räkna om hastigheten så vi förflyttar oss lika många pixlar oavsett var vi är på ellipsen
+    const dTheta = velocity / Math.hypot(currentRx * Math.sin(theta), currentRy * Math.cos(theta));
+    
     let prevTheta = theta;
-    theta += speed;
+    theta += dTheta;
     
     if (theta >= Math.PI * 2) {
         theta -= Math.PI * 2;
@@ -89,7 +93,7 @@ function runGame() {
     const topAngle = 1.5 * Math.PI;
     if (prevTheta < topAngle && theta >= topAngle) {
         gameScore++;
-        speed += 0.0008; // Mildare ökning nu när grundhastigheten är lägre
+        velocity += 0.2; // Öka hastigheten i pixlar per frame
         spawnBomb(); 
         
         if(gameScore > highScore) { 
@@ -98,23 +102,30 @@ function runGame() {
         }
     }
 
-    // --- FIXEN ÄR HÄR ---
-    const targetR = targetTrack === 'inner' ? rInner : rOuter;
-    currentR += (targetR - currentR) * 0.15; 
+    const targetRx = targetTrack === 'inner' ? pathInner.rx : pathOuter.rx;
+    const targetRy = targetTrack === 'inner' ? pathInner.ry : pathOuter.ry;
 
-    // Ellips-matte: multiplicera X med scaleX
-    const trainX = cx + currentR * scaleX * Math.cos(theta);
-    const trainY = cy + currentR * Math.sin(theta);
+    // LERP (mjuk övergång) för bytet mellan spåren
+    currentRx += (targetRx - currentRx) * 0.15; 
+    currentRy += (targetRy - currentRy) * 0.15; 
+
+    // Tågets position
+    const trainX = cx + currentRx * Math.cos(theta);
+    const trainY = cy + currentRy * Math.sin(theta);
     
-    const bombX = cx + bomb.r * scaleX * Math.cos(bomb.angle);
-    const bombY = cy + bomb.r * Math.sin(bomb.angle);
+    // Bombens position
+    const bRx = bomb.track === 'outer' ? pathOuter.rx : pathInner.rx;
+    const bRy = bomb.track === 'outer' ? pathOuter.ry : pathInner.ry;
+    const bombX = cx + bRx * Math.cos(bomb.angle);
+    const bombY = cy + bRy * Math.sin(bomb.angle);
 
     // Krock!
     if (Math.hypot(trainX - bombX, trainY - bombY) < 25) {
         gameScore = 0;
-        speed = baseSpeed;
+        velocity = baseVelocity;
         theta = Math.PI / 2;
-        currentR = rInner;
+        currentRx = pathInner.rx;
+        currentRy = pathInner.ry;
         targetTrack = 'inner';
         updateButtonUI();
         spawnBomb();
@@ -123,28 +134,29 @@ function runGame() {
     // --- RITA UT ALLT ---
     ctx.clearRect(0, 0, 800, 300);
     
-    // 1. Rita guider för spåren (färgade!)
-    ctx.lineWidth = 20;
+    // 1. Rita guider för spåren (färgade)
+    // 46px tjocklek gör att de lägger sig snyggt inuti 50px-gapet mellan väggarna
+    ctx.lineWidth = 46; 
     
-    // Inre (Blått)
+    // Inre spår (Blått)
     ctx.strokeStyle = "rgba(59, 130, 246, 0.2)"; 
     ctx.beginPath(); 
-    ctx.ellipse(cx, cy, rInner * scaleX, rInner, 0, 0, Math.PI * 2); 
+    ctx.ellipse(cx, cy, pathInner.rx, pathInner.ry, 0, 0, Math.PI * 2); 
     ctx.stroke();
 
-    // Yttre (Rött)
+    // Yttre spår (Rött)
     ctx.strokeStyle = "rgba(239, 68, 68, 0.2)"; 
     ctx.beginPath(); 
-    ctx.ellipse(cx, cy, rOuter * scaleX, rOuter, 0, 0, Math.PI * 2); 
+    ctx.ellipse(cx, cy, pathOuter.rx, pathOuter.ry, 0, 0, Math.PI * 2); 
     ctx.stroke();
 
-    // 2. Rita de 3 solida avgränsningsringarna
+    // 2. Rita de 3 avgränsningsringarna
     ctx.strokeStyle = "#475569"; // Slate 600
     ctx.lineWidth = 4;
     
-    ctx.beginPath(); ctx.ellipse(cx, cy, a * scaleX, a, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(cx, cy, a * 1.5 * scaleX, a * 1.5, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.ellipse(cx, cy, a * 2 * scaleX, a * 2, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, wallInner.rx, wallInner.ry, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, wallMid.rx, wallMid.ry, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, wallOuter.rx, wallOuter.ry, 0, 0, Math.PI * 2); ctx.stroke();
 
     // 3. Rita mittpunkten
     ctx.fillStyle = "#eab308";
@@ -164,8 +176,8 @@ function runGame() {
     ctx.restore();
 
     // 5. Rita Tåget
-    // Räkna ut rätt rotation för en ellips (deriveringen av kurvan)
-    const trainRot = Math.atan2(Math.cos(theta), -scaleX * Math.sin(theta));
+    // Räkna ut rätt rotation (derivatan av ellipsen)
+    const trainRot = Math.atan2(currentRy * Math.cos(theta), -currentRx * Math.sin(theta));
     
     ctx.save();
     ctx.translate(trainX, trainY);
