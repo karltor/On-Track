@@ -98,6 +98,8 @@ function runGame() {
         }
     }
 
+    // --- FIXEN ÄR HÄR ---
+    const targetR = targetTrack === 'inner' ? rInner : rOuter;
     currentR += (targetR - currentR) * 0.15; 
 
     // Ellips-matte: multiplicera X med scaleX
