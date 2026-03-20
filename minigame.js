@@ -1,18 +1,19 @@
-// --- CIRKEL TÅG MINIGAME LOGIK ---
+// --- ELLIPTISKT TÅG MINIGAME LOGIK ---
 let gameScore = 0;
 let highScore = parseInt(localStorage.getItem('train_hs')) || 0;
 
 // Geometri-konstanter
 const cx = 400; // Mitten av canvas X
 const cy = 150; // Mitten av canvas Y
-const a = 60;   // Bas-radie
+const a = 50;   // Bas-radie (något mindre nu när vi sträcker ut den)
+const scaleX = 2.5; // Gör den 2.5 gånger bredare än vad den är hög (ellips)
 
 // Spårens radier (exakt mellan ringarna)
-const rInner = a * 1.25; // 75
-const rOuter = a * 1.75; // 105
+const rInner = a * 1.25; 
+const rOuter = a * 1.75; 
 
-let theta = Math.PI / 2; // Starta rakt ner så vi inte dör direkt
-let baseSpeed = 0.02;
+let theta = Math.PI / 2; // Starta rakt ner i mitten
+let baseSpeed = 0.01; // Halverad starthastighet
 let speed = baseSpeed;
 
 let targetTrack = 'inner';
@@ -22,29 +23,41 @@ let bomb = { r: rOuter, angle: Math.PI / 2 };
 let gameLoopId = null;
 let isPlaying = false;
 
-export function toggleSwitch() {
-    targetTrack = targetTrack === 'inner' ? 'outer' : 'inner';
+// Hjälpfunktion för att synka knappen
+function updateButtonUI() {
     const btn = document.getElementById('switchBtn');
     if(btn) {
-        // Uppdaterar knappens utseende beroende på spår
-        btn.className = `w-full py-4 border-b-4 rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none ${targetTrack === 'inner' ? 'bg-blue-500 border-blue-700 hover:bg-blue-400 text-white' : 'bg-red-500 border-red-700 hover:bg-red-400 text-white'}`;
-        btn.innerText = targetTrack === 'inner' ? "SPÅR: INRE 🔄" : "SPÅR: YTTRE 🔀";
+        if (targetTrack === 'inner') {
+            btn.className = "w-full py-4 border-b-4 border-blue-700 bg-blue-500 hover:bg-blue-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none";
+            btn.innerText = "SPÅR: INRE (BLÅTT) 🔄";
+        } else {
+            btn.className = "w-full py-4 border-b-4 border-red-700 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none";
+            btn.innerText = "SPÅR: YTTRE (RÖTT) 🔀";
+        }
     }
 }
 
+export function toggleSwitch() {
+    targetTrack = targetTrack === 'inner' ? 'outer' : 'inner';
+    updateButtonUI();
+}
+
 function spawnBomb() {
-    // Välj spår slumpmässigt
     const isOuter = Math.random() > 0.5;
     const r = isOuter ? rOuter : rInner;
     
-    // Canvas Y ökar nedåt, så vinklar mellan 0 och PI är den nedre halvan!
-    const angle = Math.random() * Math.PI;
+    // Begränsa till nedre bottenmitten (60 till 120 grader)
+    // 60 grader = PI/3, 120 grader = 2*PI/3
+    const minAngle = Math.PI / 3;
+    const maxAngle = (2 * Math.PI) / 3;
+    const angle = minAngle + Math.random() * (maxAngle - minAngle);
     
     bomb = { r, angle };
 }
 
 export function startMinigame() {
     isPlaying = true;
+    updateButtonUI(); // Sätt rätt text på knappen direkt när spelet startar
     if (gameLoopId) cancelAnimationFrame(gameLoopId);
     runGame();
 }
@@ -67,18 +80,17 @@ function runGame() {
     let prevTheta = theta;
     theta += speed;
     
-    // Håll vinkeln mellan 0 och 2*PI
     if (theta >= Math.PI * 2) {
         theta -= Math.PI * 2;
         prevTheta -= Math.PI * 2;
     }
     
-    // Kolla om vi precis passerade toppen (vilket är 270 grader, eller 1.5 * PI)
+    // 270 grader = 1.5 * PI (Toppen av skärmen)
     const topAngle = 1.5 * Math.PI;
     if (prevTheta < topAngle && theta >= topAngle) {
         gameScore++;
-        speed += 0.0015; // Öka farten liiite grann varje varv
-        spawnBomb(); // Kasta in en ny bomb på nedre halvan!
+        speed += 0.0008; // Mildare ökning nu när grundhastigheten är lägre
+        spawnBomb(); 
         
         if(gameScore > highScore) { 
             highScore = gameScore; 
@@ -86,58 +98,51 @@ function runGame() {
         }
     }
 
-    // LERP (Linear Interpolation) gör så tåget byter spår snyggt och mjukt
-    const targetR = targetTrack === 'inner' ? rInner : rOuter;
     currentR += (targetR - currentR) * 0.15; 
 
-    // Konvertera polära koordinater (radie & vinkel) till X och Y
-    const trainX = cx + currentR * Math.cos(theta);
+    // Ellips-matte: multiplicera X med scaleX
+    const trainX = cx + currentR * scaleX * Math.cos(theta);
     const trainY = cy + currentR * Math.sin(theta);
     
-    const bombX = cx + bomb.r * Math.cos(bomb.angle);
+    const bombX = cx + bomb.r * scaleX * Math.cos(bomb.angle);
     const bombY = cy + bomb.r * Math.sin(bomb.angle);
 
-    // Krock-detektering (räknar ut avståndet mellan tåg och bomb)
+    // Krock!
     if (Math.hypot(trainX - bombX, trainY - bombY) < 25) {
         gameScore = 0;
         speed = baseSpeed;
-        theta = Math.PI / 2; // Återställ tåget till botten
+        theta = Math.PI / 2;
         currentR = rInner;
         targetTrack = 'inner';
+        updateButtonUI();
         spawnBomb();
-        
-        // Återställ knappens UI om vi dog på yttre spåret
-        const btn = document.getElementById('switchBtn');
-        if(btn) {
-            btn.className = "w-full py-4 border-b-4 border-blue-700 bg-blue-500 hover:bg-blue-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none";
-            btn.innerText = "SPÅR: INRE 🔄";
-        }
     }
 
     // --- RITA UT ALLT ---
     ctx.clearRect(0, 0, 800, 300);
     
-    // 1. Rita de 3 ringarna (a, 1.5a, 2a)
-    ctx.strokeStyle = "#475569"; // Slate 600
-    ctx.lineWidth = 6;
+    // 1. Rita guider för spåren (färgade!)
+    ctx.lineWidth = 20;
     
-    ctx.beginPath();
-    ctx.arc(cx, cy, a, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    ctx.beginPath();
-    ctx.arc(cx, cy, a * 1.5, 0, Math.PI * 2);
-    ctx.stroke();
-    
-    ctx.beginPath();
-    ctx.arc(cx, cy, a * 2, 0, Math.PI * 2);
+    // Inre (Blått)
+    ctx.strokeStyle = "rgba(59, 130, 246, 0.2)"; 
+    ctx.beginPath(); 
+    ctx.ellipse(cx, cy, rInner * scaleX, rInner, 0, 0, Math.PI * 2); 
     ctx.stroke();
 
-    // 2. Rita ut en subtil bakgrund för spåren tåget faktiskt åker på
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
-    ctx.lineWidth = 20;
-    ctx.beginPath(); ctx.arc(cx, cy, rInner, 0, Math.PI * 2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(cx, cy, rOuter, 0, Math.PI * 2); ctx.stroke();
+    // Yttre (Rött)
+    ctx.strokeStyle = "rgba(239, 68, 68, 0.2)"; 
+    ctx.beginPath(); 
+    ctx.ellipse(cx, cy, rOuter * scaleX, rOuter, 0, 0, Math.PI * 2); 
+    ctx.stroke();
+
+    // 2. Rita de 3 solida avgränsningsringarna
+    ctx.strokeStyle = "#475569"; // Slate 600
+    ctx.lineWidth = 4;
+    
+    ctx.beginPath(); ctx.ellipse(cx, cy, a * scaleX, a, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, a * 1.5 * scaleX, a * 1.5, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, a * 2 * scaleX, a * 2, 0, 0, Math.PI * 2); ctx.stroke();
 
     // 3. Rita mittpunkten
     ctx.fillStyle = "#eab308";
@@ -145,21 +150,24 @@ function runGame() {
     ctx.arc(cx, cy, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // 4. Rita Bomben (med en liten puls-effekt för att göra den läskigare)
+    // 4. Rita Bomben
     ctx.font = "35px Arial"; 
     ctx.textAlign = "center"; 
     ctx.textBaseline = "middle";
-    const pulse = 1 + 0.1 * Math.sin(Date.now() / 100); // Andas in/ut
+    const pulse = 1 + 0.1 * Math.sin(Date.now() / 150);
     ctx.save();
     ctx.translate(bombX, bombY);
     ctx.scale(pulse, pulse);
     ctx.fillText("🧨", 0, 0);
     ctx.restore();
 
-    // 5. Rita Tåget (roterat så det pekar framåt på spåret)
+    // 5. Rita Tåget
+    // Räkna ut rätt rotation för en ellips (deriveringen av kurvan)
+    const trainRot = Math.atan2(Math.cos(theta), -scaleX * Math.sin(theta));
+    
     ctx.save();
     ctx.translate(trainX, trainY);
-    ctx.rotate(theta + Math.PI / 2); // Tangentens vinkel är theta + 90 grader
+    ctx.rotate(trainRot); 
     ctx.font = "40px Arial";
     ctx.fillText("🚂", 0, 0);
     ctx.restore();
