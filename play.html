@@ -20,6 +20,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
         import { getFirestore, doc, collection, onSnapshot, addDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 
         const app = initializeApp({
             apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
@@ -27,6 +28,7 @@
             projectId: "on-track-d77d0"
         });
         const db = getFirestore(app);
+        const auth = getAuth(app);
 
         const urlParams = new URLSearchParams(window.location.search);
         const sessionPin = urlParams.get('session');
@@ -47,7 +49,7 @@
         let sessionData = null;
         let allPlayers = [];
         let playerData = null;
-        let finalResults = null; 
+        let finalResults = null;
         const POINTS = [10, 8, 6, 4, 2];
 
         // --- TÅG MINIGAME LOGIK ---
@@ -177,13 +179,19 @@
         }
 
         // --- FIREBASE SYNC ---
+        // Wait for anonymous auth before starting Firebase operations
+        signInAnonymously(auth);
+        onAuthStateChanged(auth, (user) => {
+            if (user && sessionPin) startListeners();
+        });
+
+        function startListeners() {
         setInterval(() => {
             if (playerId && sessionData && !finalResults) {
                 updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { lastActive: Date.now() }).catch(() => {});
             }
         }, 5000);
 
-        if(sessionPin) {
             onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
                 if (finalResults) return; 
                 if (docSnap.exists()) {
@@ -223,6 +231,12 @@
                 
                 if(playerId) {
                     playerData = allPlayers.find(p => p.id === playerId);
+                    // If stored player belongs to a different auth user, clear and re-join
+                    if(playerData && playerData.uid && playerData.uid !== auth.currentUser.uid) {
+                        localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
+                        playerId = null;
+                        playerData = null;
+                    }
                     if(playerData?.banned) {
                         localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
                         document.getElementById('app').innerHTML = '<h1 class="text-center text-red-500 font-black text-3xl mt-20">Utkastad</h1><p class="text-center text-slate-400 mt-2">Din lärare har tagit bort dig från spelet.</p>';
@@ -231,7 +245,7 @@
                 }
                 if (shouldRender) render();
             });
-        }
+        } // end startListeners
 
         function computeFinalResults() {
             if(!playerData || !sessionData) return;
@@ -259,18 +273,19 @@
             btn.disabled = true; btn.innerText = "Ansluter...";
             try {
                 const docRef = await addDoc(collection(db, "sessions", sessionPin, "players"), {
-                    name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now()
+                    name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now(),
+                    uid: auth.currentUser.uid
                 });
                 playerId = docRef.id;
                 localStorage.setItem(`pa_sparet_player_${sessionPin}`, playerId);
-                
-                playerData = { id: playerId, name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now() };
+
+                playerData = { id: playerId, name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now(), uid: auth.currentUser.uid };
                 allPlayers.push(playerData);
                 render();
-            } catch (err) { 
+            } catch (err) {
                 console.error("Fel vid anslutning:", err);
-                showToast("Kunde inte ansluta till spelet.", "❌"); 
-                btn.disabled = false; btn.innerText = "Gå med i spelet"; 
+                showToast("Kunde inte ansluta till spelet.", "❌");
+                btn.disabled = false; btn.innerText = "Gå med i spelet";
             }
         };
 

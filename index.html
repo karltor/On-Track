@@ -76,6 +76,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
         import { getFirestore, doc, setDoc, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
@@ -89,6 +90,11 @@
 
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
+        const auth = getAuth(app);
+        const authReady = new Promise((resolve) => {
+            onAuthStateChanged(auth, (user) => { if (user) resolve(user); });
+        });
+        signInAnonymously(auth);
 
         // App State
         const STORAGE_KEY = 'pa_sparet_saved_boards';
@@ -161,6 +167,7 @@
             if (shareId) {
                 showToast("Hämtar delat spelbräde...", "⏳");
                 try {
+                    await authReady;
                     const docRef = doc(db, "shared_boards", shareId);
                     const docSnap = await getDoc(docRef);
                     
@@ -333,8 +340,9 @@
             const btn = document.getElementById('btnShareLink');
             const originalText = btn.innerHTML;
             btn.innerHTML = "Skapar länk...";
-            
+
             try {
+                await authReady;
                 // Skapa ett random ID och spara i Firebase shared_boards
                 const shareId = Math.random().toString(36).substring(2, 10);
                 await setDoc(doc(db, "shared_boards", shareId), boardToExport);
@@ -491,32 +499,34 @@
         // STARTA SESSION
         window.startSession = async (index) => {
             const selectedBoard = boards[index];
-            
+
             // 4-siffrig PIN-kod
             const pin = Math.floor(1000 + Math.random() * 9000).toString();
-            const adminToken = Math.random().toString(36).substring(2, 15);
 
             // SÄKERHET: Vi separerar ledtrådar (offentliga) från svaren (hemliga)
             const publicBoards = selectedBoard.boards.map(b => ({ clues: b.clues }));
             const secretAnswers = selectedBoard.boards.map(b => b.answer);
 
-            const sessionData = {
-                adminToken: adminToken,
-                gameState: "lobby",
-                boards: publicBoards,
-                currentBoardIndex: 0,
-                currentClueIndex: 0,
-                teams: [],
-                createdAt: new Date().toISOString()
-            };
-
             try {
+                await authReady;
+
+                const sessionData = {
+                    creatorUid: auth.currentUser.uid,
+                    gameState: "lobby",
+                    boards: publicBoards,
+                    currentBoardIndex: 0,
+                    currentClueIndex: 0,
+                    teams: [],
+                    createdAt: new Date().toISOString()
+                };
+
                 const batch = writeBatch(db);
                 batch.set(doc(db, "sessions", pin), sessionData);
-                batch.set(doc(db, "sessions", `${pin}_${adminToken}`), { answers: secretAnswers });
+                // Secret answers stored in private subcollection (only creator can access)
+                batch.set(doc(db, "sessions", pin, "private", "answers"), { answers: secretAnswers });
                 await batch.commit();
-                
-                localStorage.setItem(`pa_sparet_admin_${pin}`, adminToken);
+
+                localStorage.setItem(`pa_sparet_admin_${pin}`, 'true');
                 window.location.href = `host.html?session=${pin}`;
             } catch (error) {
                 showToast("Kunde inte starta sessionen mot Firebase.", "❌");
