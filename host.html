@@ -19,6 +19,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
         import { getFirestore, doc, collection, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 
         const app = initializeApp({
             apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
@@ -26,64 +27,73 @@
             projectId: "on-track-d77d0"
         });
         const db = getFirestore(app);
+        const auth = getAuth(app);
 
         const urlParams = new URLSearchParams(window.location.search);
         const sessionPin = urlParams.get('session');
-        const adminToken = localStorage.getItem(`pa_sparet_admin_${sessionPin}`);
+        const isAdmin = localStorage.getItem(`pa_sparet_admin_${sessionPin}`);
 
-        if (!sessionPin || !adminToken) {
+        if (!sessionPin || !isAdmin) {
             alert("Ogiltig session."); window.location.href = 'index.html';
         }
 
         let sessionData = null;
         let playersData = [];
         let secretAnswers = [];
-        let finalResults = null; 
+        let finalResults = null;
         const POINTS = [10, 8, 6, 4, 2];
-        let hasCleanedUp = false; 
-        
+        let hasCleanedUp = false;
+
         const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
         const playUrl = `${window.location.origin}${basePath}/play.html?session=${sessionPin}`;
 
-        // Forcea en re-render var 5:e sekund för att uppdatera offline-status på elever
-        setInterval(() => {
-            if(sessionData && sessionData.gameState !== 'finished') render();
-        }, 5000);
-
-        onSnapshot(doc(db, "sessions", `${sessionPin}_${adminToken}`), (docSnap) => {
-            if(finalResults) return;
-            if (docSnap.exists()) secretAnswers = docSnap.data().answers;
+        // Wait for auth before starting listeners
+        signInAnonymously(auth);
+        onAuthStateChanged(auth, (user) => {
+            if (user) startListeners();
         });
 
-        onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
-            if(finalResults) return; 
+        function startListeners() {
+            // Forcea en re-render var 5:e sekund för att uppdatera offline-status på elever
+            setInterval(() => {
+                if(sessionData && sessionData.gameState !== 'finished') render();
+            }, 5000);
 
-            if (docSnap.exists()) {
-                sessionData = docSnap.data();
-                
-                // FRYS SPELET & STÄDA DATABASEN
-                if (sessionData.gameState === 'finished') {
-                    finalResults = calculateFinalResults();
-                    render(); // Rendera sista skärmen från fryst data
+            // Secret answers from private subcollection (only creator can read)
+            onSnapshot(doc(db, "sessions", sessionPin, "private", "answers"), (docSnap) => {
+                if(finalResults) return;
+                if (docSnap.exists()) secretAnswers = docSnap.data().answers;
+            });
 
-                    // Vänta 5 sek, sen Ghost-städar vi databasen!
-                    setTimeout(async () => {
-                        try {
-                            const batch = writeBatch(db);
-                            playersData.forEach(p => batch.delete(doc(db, "sessions", sessionPin, "players", p.id)));
-                            batch.delete(doc(db, "sessions", sessionPin));
-                            batch.delete(doc(db, "sessions", `${sessionPin}_${adminToken}`));
-                            await batch.commit();
-                            console.log("Databasen städades tyst i bakgrunden.");
-                        } catch(e) {}
-                    }, 5000);
-                    return;
+            onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
+                if(finalResults) return;
+
+                if (docSnap.exists()) {
+                    sessionData = docSnap.data();
+
+                    // FRYS SPELET & STÄDA DATABASEN
+                    if (sessionData.gameState === 'finished') {
+                        finalResults = calculateFinalResults();
+                        render(); // Rendera sista skärmen från fryst data
+
+                        // Vänta 5 sek, sen Ghost-städar vi databasen!
+                        setTimeout(async () => {
+                            try {
+                                const batch = writeBatch(db);
+                                playersData.forEach(p => batch.delete(doc(db, "sessions", sessionPin, "players", p.id)));
+                                batch.delete(doc(db, "sessions", sessionPin, "private", "answers"));
+                                batch.delete(doc(db, "sessions", sessionPin));
+                                await batch.commit();
+                                console.log("Databasen städades tyst i bakgrunden.");
+                            } catch(e) {}
+                        }, 5000);
+                        return;
+                    }
+                    render();
                 }
-                render();
-            }
-        });
+            });
 
-        onSnapshot(collection(db, "sessions", sessionPin, "players"), (querySnapshot) => {
+            onSnapshot(collection(db, "sessions", sessionPin, "players"), (querySnapshot) => {
             if(finalResults) return; 
             
             playersData = [];
@@ -103,6 +113,7 @@
             });
             render();
         });
+        } // end startListeners
 
         function calculateFinalResults() {
             const activePlayers = playersData.filter(p => !p.banned);
