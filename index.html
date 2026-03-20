@@ -128,7 +128,7 @@
         // Auto-importera standardpaket
         async function loadDefaultPackages() {
             let imported = JSON.parse(localStorage.getItem(DEFAULTS_KEY)) || [];
-            const filesToCheck = ['paket1.json', 'paket2.json', 'paket3.json']; 
+            const filesToCheck = ['paket1.json', 'paket2.json']; 
             let newlyImported = false;
 
             for (const file of filesToCheck) {
