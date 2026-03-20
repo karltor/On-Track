@@ -91,10 +91,14 @@
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         const auth = getAuth(app);
-        const authReady = new Promise((resolve) => {
+        const authReady = new Promise((resolve, reject) => {
             onAuthStateChanged(auth, (user) => { if (user) resolve(user); });
+            setTimeout(() => reject(new Error("Auth timeout")), 10000);
         });
-        signInAnonymously(auth);
+        signInAnonymously(auth).catch(err => {
+            console.error("Anonymous auth failed:", err);
+            showToast(`Auth-fel: ${err.code || err.message}`, "❌");
+        });
 
         // App State
         const STORAGE_KEY = 'pa_sparet_saved_boards';
@@ -529,7 +533,8 @@
                 localStorage.setItem(`pa_sparet_admin_${pin}`, 'true');
                 window.location.href = `host.html?session=${pin}`;
             } catch (error) {
-                showToast("Kunde inte starta sessionen mot Firebase.", "❌");
+                console.error("startSession error:", error);
+                showToast(`Fel: ${error.code || error.message}`, "❌");
             }
         };
 
