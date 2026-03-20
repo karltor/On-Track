@@ -1,63 +1,46 @@
-// --- TÅG MINIGAME LOGIK ---
+// --- CIRKEL TÅG MINIGAME LOGIK ---
 let gameScore = 0;
 let highScore = parseInt(localStorage.getItem('train_hs')) || 0;
-let globalT = 0; 
-let trackSwitch = "blue"; 
-let activePath = "blue"; 
-let obstacle = { pos: 2.0, x: 600, y: 70 }; 
-let baseSpeed = 0.013; 
+
+// Geometri-konstanter
+const cx = 400; // Mitten av canvas X
+const cy = 150; // Mitten av canvas Y
+const a = 60;   // Bas-radie
+
+// Spårens radier (exakt mellan ringarna)
+const rInner = a * 1.25; // 75
+const rOuter = a * 1.75; // 105
+
+let theta = Math.PI / 2; // Starta rakt ner så vi inte dör direkt
+let baseSpeed = 0.02;
 let speed = baseSpeed;
+
+let targetTrack = 'inner';
+let currentR = rInner;
+
+let bomb = { r: rOuter, angle: Math.PI / 2 }; 
 let gameLoopId = null;
 let isPlaying = false;
 
 export function toggleSwitch() {
-    trackSwitch = trackSwitch === "blue" ? "yellow" : "blue";
+    targetTrack = targetTrack === 'inner' ? 'outer' : 'inner';
     const btn = document.getElementById('switchBtn');
     if(btn) {
-        btn.className = `w-full py-4 border-b-4 rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none ${trackSwitch === 'blue' ? 'bg-blue-500 border-blue-700 hover:bg-blue-400 text-white' : 'bg-yellow-400 border-yellow-600 hover:bg-yellow-300 text-slate-900'}`;
-        btn.innerText = trackSwitch === 'blue' ? "VÄXEL: BLÅ (UPP) ↗️" : "VÄXEL: GUL (NER) ↘️";
+        // Uppdaterar knappens utseende beroende på spår
+        btn.className = `w-full py-4 border-b-4 rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none ${targetTrack === 'inner' ? 'bg-blue-500 border-blue-700 hover:bg-blue-400 text-white' : 'bg-red-500 border-red-700 hover:bg-red-400 text-white'}`;
+        btn.innerText = targetTrack === 'inner' ? "SPÅR: INRE 🔄" : "SPÅR: YTTRE 🔀";
     }
 }
 
-function getBezier(p0, p1, p2, p3, t) {
-    const u = 1 - t;
-    const x = u*u*u*p0.x + 3*u*u*t*p1.x + 3*u*t*t*p2.x + t*t*t*p3.x;
-    const y = u*u*u*p0.y + 3*u*u*t*p1.y + 3*u*t*t*p2.y + t*t*t*p3.y;
-    return {x, y};
-}
-
-function getTrainPos(gT, pathColor) {
-    const seg = Math.floor(gT);
-    const t = gT - seg;
-    if (pathColor === 'blue') {
-        if(seg === 0) return {x: 300 + 200*t, y: 150}; 
-        if(seg === 1) return getBezier({x:500,y:150}, {x:550,y:150}, {x:550,y:70}, {x:600,y:70}, t); 
-        if(seg === 2) return {x: 600 + 80*Math.cos(-Math.PI/2 + Math.PI*t), y: 150 + 80*Math.sin(-Math.PI/2 + Math.PI*t)}; 
-        if(seg === 3) return getBezier({x:600,y:230}, {x:550,y:230}, {x:550,y:150}, {x:500,y:150}, t); 
-        if(seg === 4) return {x: 500 - 200*t, y: 150}; 
-        if(seg === 5) return getBezier({x:300,y:150}, {x:250,y:150}, {x:250,y:70}, {x:200,y:70}, t); 
-        if(seg === 6) return {x: 200 + 80*Math.cos(-Math.PI/2 - Math.PI*t), y: 150 + 80*Math.sin(-Math.PI/2 - Math.PI*t)}; 
-        if(seg === 7) return getBezier({x:200,y:230}, {x:250,y:230}, {x:250,y:150}, {x:300,y:150}, t); 
-    } else { 
-        if(seg === 0) return {x: 300 + 200*t, y: 150}; 
-        if(seg === 1) return getBezier({x:500,y:150}, {x:550,y:150}, {x:550,y:230}, {x:600,y:230}, t); 
-        if(seg === 2) return {x: 600 + 80*Math.cos(Math.PI/2 - Math.PI*t), y: 150 + 80*Math.sin(Math.PI/2 - Math.PI*t)}; 
-        if(seg === 3) return getBezier({x:600,y:70}, {x:550,y:70}, {x:550,y:150}, {x:500,y:150}, t); 
-        if(seg === 4) return {x: 500 - 200*t, y: 150}; 
-        if(seg === 5) return getBezier({x:300,y:150}, {x:250,y:150}, {x:250,y:230}, {x:200,y:230}, t); 
-        if(seg === 6) return {x: 200 + 80*Math.cos(Math.PI/2 + Math.PI*t), y: 150 + 80*Math.sin(Math.PI/2 + Math.PI*t)}; 
-        if(seg === 7) return getBezier({x:200,y:70}, {x:250,y:70}, {x:250,y:150}, {x:300,y:150}, t); 
-    }
-    return {x:300, y:150}; 
-}
-
-function spawnObstacle(side) {
-    const isTop = Math.random() > 0.5;
-    if (side === 'right') {
-        obstacle = isTop ? { pos: 2.0, x: 600, y: 70 } : { pos: 2.0, x: 600, y: 230 }; 
-    } else {
-        obstacle = isTop ? { pos: 6.0, x: 200, y: 70 } : { pos: 6.0, x: 200, y: 230 }; 
-    }
+function spawnBomb() {
+    // Välj spår slumpmässigt
+    const isOuter = Math.random() > 0.5;
+    const r = isOuter ? rOuter : rInner;
+    
+    // Canvas Y ökar nedåt, så vinklar mellan 0 och PI är den nedre halvan!
+    const angle = Math.random() * Math.PI;
+    
+    bomb = { r, angle };
 }
 
 export function startMinigame() {
@@ -78,62 +61,115 @@ function runGame() {
     if (!isPlaying) return;
     
     const canvas = document.getElementById('gameCanvas');
-    if(!canvas) return; // Exit if canvas is no longer in the DOM
+    if(!canvas) return;
     const ctx = canvas.getContext('2d');
     
-    let prevT = globalT;
-    globalT += speed;
+    let prevTheta = theta;
+    theta += speed;
     
-    if (globalT >= 8.0) { globalT -= 8.0; activePath = trackSwitch; }
-    if (prevT < 4.0 && globalT >= 4.0) { activePath = trackSwitch; }
+    // Håll vinkeln mellan 0 och 2*PI
+    if (theta >= Math.PI * 2) {
+        theta -= Math.PI * 2;
+        prevTheta -= Math.PI * 2;
+    }
     
-    if (prevT < 2.5 && globalT >= 2.5) {
-        gameScore++; speed += 0.002;
-        spawnObstacle('left'); 
-        if(gameScore > highScore) { highScore = gameScore; localStorage.setItem('train_hs', highScore); }
-    }
-    if (prevT < 6.5 && globalT >= 6.5) {
-        gameScore++; speed += 0.002;
-        spawnObstacle('right'); 
-        if(gameScore > highScore) { highScore = gameScore; localStorage.setItem('train_hs', highScore); }
-    }
-
-    let trainP = getTrainPos(globalT, activePath);
-
-    if (Math.hypot(trainP.x - obstacle.x, trainP.y - obstacle.y) < 25) {
-        gameScore = 0; speed = baseSpeed; globalT = 0; activePath = trackSwitch;
-        spawnObstacle('right'); 
+    // Kolla om vi precis passerade toppen (vilket är 270 grader, eller 1.5 * PI)
+    const topAngle = 1.5 * Math.PI;
+    if (prevTheta < topAngle && theta >= topAngle) {
+        gameScore++;
+        speed += 0.0015; // Öka farten liiite grann varje varv
+        spawnBomb(); // Kasta in en ny bomb på nedre halvan!
+        
+        if(gameScore > highScore) { 
+            highScore = gameScore; 
+            localStorage.setItem('train_hs', highScore); 
+        }
     }
 
+    // LERP (Linear Interpolation) gör så tåget byter spår snyggt och mjukt
+    const targetR = targetTrack === 'inner' ? rInner : rOuter;
+    currentR += (targetR - currentR) * 0.15; 
+
+    // Konvertera polära koordinater (radie & vinkel) till X och Y
+    const trainX = cx + currentR * Math.cos(theta);
+    const trainY = cy + currentR * Math.sin(theta);
+    
+    const bombX = cx + bomb.r * Math.cos(bomb.angle);
+    const bombY = cy + bomb.r * Math.sin(bomb.angle);
+
+    // Krock-detektering (räknar ut avståndet mellan tåg och bomb)
+    if (Math.hypot(trainX - bombX, trainY - bombY) < 25) {
+        gameScore = 0;
+        speed = baseSpeed;
+        theta = Math.PI / 2; // Återställ tåget till botten
+        currentR = rInner;
+        targetTrack = 'inner';
+        spawnBomb();
+        
+        // Återställ knappens UI om vi dog på yttre spåret
+        const btn = document.getElementById('switchBtn');
+        if(btn) {
+            btn.className = "w-full py-4 border-b-4 border-blue-700 bg-blue-500 hover:bg-blue-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none";
+            btn.innerText = "SPÅR: INRE 🔄";
+        }
+    }
+
+    // --- RITA UT ALLT ---
     ctx.clearRect(0, 0, 800, 300);
     
-    ctx.strokeStyle = "#475569"; ctx.lineWidth = 14; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(300, 150); ctx.lineTo(500, 150); ctx.stroke();
-
-    ctx.strokeStyle = "#3b82f6";
-    ctx.beginPath(); ctx.moveTo(500, 150); ctx.bezierCurveTo(550, 150, 550, 70, 600, 70); ctx.arc(600, 150, 80, -Math.PI/2, 0); ctx.stroke();
-    ctx.strokeStyle = "#eab308";
-    ctx.beginPath(); ctx.arc(600, 150, 80, 0, Math.PI/2); ctx.bezierCurveTo(550, 230, 550, 150, 500, 150); ctx.stroke();
-
-    ctx.strokeStyle = "#3b82f6";
-    ctx.beginPath(); ctx.moveTo(300, 150); ctx.bezierCurveTo(250, 150, 250, 70, 200, 70); ctx.arc(200, 150, 80, -Math.PI/2, Math.PI, true); ctx.stroke();
-    ctx.strokeStyle = "#eab308";
-    ctx.beginPath(); ctx.arc(200, 150, 80, Math.PI, Math.PI/2, true); ctx.bezierCurveTo(250, 230, 250, 150, 300, 150); ctx.stroke();
+    // 1. Rita de 3 ringarna (a, 1.5a, 2a)
+    ctx.strokeStyle = "#475569"; // Slate 600
+    ctx.lineWidth = 6;
     
-    ctx.fillStyle = "#ef4444";
-    ctx.beginPath(); ctx.arc(300, 150, 8, 0, Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(500, 150, 8, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, a, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.arc(cx, cy, a * 1.5, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    ctx.beginPath();
+    ctx.arc(cx, cy, a * 2, 0, Math.PI * 2);
+    ctx.stroke();
 
-    ctx.font = "30px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("📦", obstacle.x, obstacle.y);
+    // 2. Rita ut en subtil bakgrund för spåren tåget faktiskt åker på
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
+    ctx.lineWidth = 20;
+    ctx.beginPath(); ctx.arc(cx, cy, rInner, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, rOuter, 0, Math.PI * 2); ctx.stroke();
 
+    // 3. Rita mittpunkten
+    ctx.fillStyle = "#eab308";
+    ctx.beginPath();
+    ctx.arc(cx, cy, 8, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 4. Rita Bomben (med en liten puls-effekt för att göra den läskigare)
+    ctx.font = "35px Arial"; 
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
+    const pulse = 1 + 0.1 * Math.sin(Date.now() / 100); // Andas in/ut
+    ctx.save();
+    ctx.translate(bombX, bombY);
+    ctx.scale(pulse, pulse);
+    ctx.fillText("🧨", 0, 0);
+    ctx.restore();
+
+    // 5. Rita Tåget (roterat så det pekar framåt på spåret)
+    ctx.save();
+    ctx.translate(trainX, trainY);
+    ctx.rotate(theta + Math.PI / 2); // Tangentens vinkel är theta + 90 grader
     ctx.font = "40px Arial";
-    ctx.fillText("🚂", trainP.x, trainP.y);
+    ctx.fillText("🚂", 0, 0);
+    ctx.restore();
     
+    // Uppdatera Poäng i UI
     const sDisplay = document.getElementById('scoreDisplay');
     if(sDisplay) sDisplay.innerText = gameScore;
     const hsDisplay = document.getElementById('hsDisplay');
     if(hsDisplay) hsDisplay.innerText = highScore;
 
+    // Loopa
     gameLoopId = requestAnimationFrame(runGame);
 }
