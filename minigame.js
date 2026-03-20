@@ -12,14 +12,19 @@ const halfL = 120; // Halva längden på raksträckan (total raksträcka blir 24
 const rInner = 55;
 const rOuter = 105;
 
-let baseVelocity = 3;  // Jämn hastighet i pixlar per frame
+// --- SPELINSTÄLLNINGAR ---
+let baseVelocity = 3.5;  // Bas-hastighet i pixlar per frame
+let curveSpeedMultiplier = 0.8; // Sakta ner tåget med 20% i kurvorna (0.8 = 80% hastighet)
 let velocity = baseVelocity;
-let currentDist = 0;   // Hur långt tåget åkt längs spåret
 
+let currentDist = 0;   // Hur långt tåget åkt längs INNER-spåret (vår referens)
 let targetTrack = 'inner';
 let currentR = rInner;
 
-let bomb = { r: rOuter, d: 0 }; 
+let bomb = { track: 'outer', d: 0, active: true }; 
+let explosion = { active: false, x: 0, y: 0, timer: 0 };
+let hasHitBombThisLap = false; // Håller koll på om vi ska få 0 poäng i slutet av varvet
+
 let gameLoopId = null;
 let isPlaying = false;
 
@@ -43,21 +48,19 @@ export function toggleSwitch() {
 
 function spawnBomb() {
     const isOuter = Math.random() > 0.5;
-    const r = isOuter ? rOuter : rInner;
+    const track = isOuter ? 'outer' : 'inner';
     
-    // Total spårlängd
-    const L = 4 * halfL + 2 * Math.PI * r;
+    // Total spårlängd för inre spåret
+    const L = 4 * halfL + 2 * Math.PI * rInner;
     
-    // Vi vill att bomben ska spawna på den nedre halvan.
-    // Nedre halvan börjar halvvägs genom vänstra kurvan, 
-    // går via bottenrakan, och slutar halvvägs genom högra kurvan.
-    const startD = 3 * halfL + 1.5 * Math.PI * r; 
-    const rangeD = Math.PI * r + 2 * halfL;
+    // Nedre halvan: från mitten av vänster kurva till mitten av höger kurva
+    const startD = 3 * halfL + 1.5 * Math.PI * rInner; 
+    const rangeD = Math.PI * rInner + 2 * halfL;
     
-    // Slumpa en plats och se till att den loopar runt rätt
     bomb = { 
-        r: r, 
-        d: (startD + Math.random() * rangeD) % L 
+        track: track, 
+        d: (startD + Math.random() * rangeD) % L,
+        active: true
     };
 }
 
@@ -76,62 +79,56 @@ export function stopMinigame() {
     }
 }
 
-// Magisk funktion som räknar ut exakt X, Y och rotation 
-// baserat på hur långt man åkt (d) och vilken radie (r) man ligger på.
-function getTrackPos(d, r) {
-    const L = 4 * halfL + 2 * Math.PI * r;
+// Funktion för att beräkna position, rotation och NORMAL-vektor på inre spåret
+function getRefPosAndNormal(d) {
+    const L = 4 * halfL + 2 * Math.PI * rInner;
     d = d % L;
     if (d < 0) d += L;
     
-    let x, y, rot;
+    let x, y, rot, nx, ny, isCurve;
     
     if (d <= halfL) {
         // Raka botten (högra halvan)
-        x = cx + d;
-        y = cy + r;
-        rot = 0; // Åker höger
+        x = cx + d; y = cy + rInner;
+        nx = 0; ny = 1; rot = 0; isCurve = false;
     } 
-    else if (d <= halfL + Math.PI * r) {
+    else if (d <= halfL + Math.PI * rInner) {
         // Högra kurvan
         let s = d - halfL;
-        let theta = 0.5 * Math.PI - s / r; // Går från 90 till -90 grader
-        x = cx + halfL + r * Math.cos(theta);
-        y = cy + r * Math.sin(theta);
-        rot = theta - Math.PI / 2;
+        let theta = 0.5 * Math.PI - s / rInner; // Går från 90 till -90 grader
+        x = cx + halfL + rInner * Math.cos(theta); y = cy + rInner * Math.sin(theta);
+        nx = Math.cos(theta); ny = Math.sin(theta); rot = theta - Math.PI / 2; isCurve = true;
     } 
-    else if (d <= 3 * halfL + Math.PI * r) {
+    else if (d <= 3 * halfL + Math.PI * rInner) {
         // Raka toppen
-        let s = d - (halfL + Math.PI * r);
-        x = cx + halfL - s;
-        y = cy - r;
-        rot = Math.PI; // Åker vänster
+        let s = d - (halfL + Math.PI * rInner);
+        x = cx + halfL - s; y = cy - rInner;
+        nx = 0; ny = -1; rot = Math.PI; isCurve = false;
     } 
-    else if (d <= 3 * halfL + 2 * Math.PI * r) {
+    else if (d <= 3 * halfL + 2 * Math.PI * rInner) {
         // Vänstra kurvan
-        let s = d - (3 * halfL + Math.PI * r);
-        let theta = 1.5 * Math.PI - s / r; // Går från 270 till 90 grader
-        x = cx - halfL + r * Math.cos(theta);
-        y = cy + r * Math.sin(theta);
-        rot = theta - Math.PI / 2;
+        let s = d - (3 * halfL + Math.PI * rInner);
+        let theta = -0.5 * Math.PI - s / rInner; // Går från 270 till 90 grader
+        x = cx - halfL + rInner * Math.cos(theta); y = cy + rInner * Math.sin(theta);
+        nx = Math.cos(theta); ny = Math.sin(theta); rot = theta - Math.PI / 2; isCurve = true;
     } 
     else {
         // Raka botten (vänstra halvan)
-        let s = d - (3 * halfL + 2 * Math.PI * r);
-        x = cx - halfL + s;
-        y = cy + r;
-        rot = 0; // Åker höger
+        let s = d - (3 * halfL + 2 * Math.PI * rInner);
+        x = cx - halfL + s; y = cy + rInner;
+        nx = 0; ny = 1; rot = 0; isCurve = false;
     }
     
-    return { x, y, rot };
+    return { x, y, nx, ny, rot, isCurve };
 }
 
 // Hjälpfunktion för att rita stadium-banan
 function drawStadium(ctx, r) {
     ctx.beginPath();
-    ctx.arc(cx + halfL, cy, r, -Math.PI/2, Math.PI/2); // Höger kurva
-    ctx.lineTo(cx - halfL, cy + r);                    // Botten-raka
-    ctx.arc(cx - halfL, cy, r, Math.PI/2, -Math.PI/2); // Vänster kurva
-    ctx.closePath();                                   // Toppen-raka
+    ctx.arc(cx + halfL, cy, r, -Math.PI/2, Math.PI/2); 
+    ctx.lineTo(cx - halfL, cy + r);                    
+    ctx.arc(cx - halfL, cy, r, Math.PI/2, -Math.PI/2); 
+    ctx.closePath();                                   
     ctx.stroke();
 }
 
@@ -142,53 +139,75 @@ function runGame() {
     if(!canvas) return;
     const ctx = canvas.getContext('2d');
     
+    // Kontrollera om vi är i en kurva just nu för att applicera fartminskning
+    const currentRef = getRefPosAndNormal(currentDist);
+    let currentVel = velocity * (currentRef.isCurve ? curveSpeedMultiplier : 1.0);
+
+    // FIX: Justera d-värdet så att hastigheten (pixlar) förblir konstant 
+    // även om vi befinner oss på det längre yttre spåret.
+    let delta_d = currentRef.isCurve ? currentVel * (rInner / currentR) : currentVel;
+    
     let prevDist = currentDist;
-    currentDist += velocity;
+    currentDist += delta_d;
     
     // Mjuk övergång mellan inner och ytter-radie
     const targetR = targetTrack === 'inner' ? rInner : rOuter;
     currentR += (targetR - currentR) * 0.15; 
     
-    // Tanka av längden så vi inte får ofantligt stora tal
-    const currentL = 4 * halfL + 2 * Math.PI * currentR;
-    if (currentDist >= currentL) {
-        currentDist -= currentL;
-        prevDist -= currentL;
+    // Tanka av längden
+    const L = 4 * halfL + 2 * Math.PI * rInner;
+    if (currentDist >= L) {
+        currentDist -= L;
+        prevDist -= L;
     }
     
-    // Mitten av toppen är exakt på avståndet "2*halfL + pi*R"
-    const topMid = 2 * halfL + Math.PI * currentR;
+    // Nytt varv! (Mitten av toppen)
+    const topMid = 2 * halfL + Math.PI * rInner;
     if (prevDist < topMid && currentDist >= topMid) {
-        gameScore++;
-        velocity += 0.2; // Spelares hastighet ökar i pixlar per frame
-        spawnBomb(); 
-        
-        if(gameScore > highScore) { 
-            highScore = gameScore; 
-            localStorage.setItem('train_hs', highScore); 
+        if (hasHitBombThisLap) {
+            // Straff för att ha sprängt bomben: 0 poäng och farten återställs
+            gameScore = 0;
+            velocity = baseVelocity;
+            hasHitBombThisLap = false; 
+        } else {
+            // Lyckat varv!
+            gameScore++;
+            velocity += 0.25; 
+            if(gameScore > highScore) { 
+                highScore = gameScore; 
+                localStorage.setItem('train_hs', highScore); 
+            }
         }
+        spawnBomb(); 
     }
 
-    // Hämta positioner
-    const trainPos = getTrackPos(currentDist, currentR);
-    const bombPos = getTrackPos(bomb.d, bomb.r);
+    // ------------------------------------------------------------------
+    // Räkna ut Tågets och Bombens exakta X/Y genom Normal-projicering
+    // ------------------------------------------------------------------
+    const refTrain = getRefPosAndNormal(currentDist);
+    const offsetTrain = currentR - rInner;
+    const trainX = refTrain.x + offsetTrain * refTrain.nx;
+    const trainY = refTrain.y + offsetTrain * refTrain.ny;
 
-    // Krock!
-    if (Math.hypot(trainPos.x - bombPos.x, trainPos.y - bombPos.y) < 25) {
+    const refBomb = getRefPosAndNormal(bomb.d);
+    const offsetBomb = (bomb.track === 'outer' ? rOuter : rInner) - rInner;
+    const bombX = refBomb.x + offsetBomb * refBomb.nx;
+    const bombY = refBomb.y + offsetBomb * refBomb.ny;
+
+    // Krock! (Gäller bara om bomben inte redan sprängts)
+    if (bomb.active && Math.hypot(trainX - bombX, trainY - bombY) < 25) {
+        bomb.active = false;
+        hasHitBombThisLap = true;
         gameScore = 0;
-        velocity = baseVelocity;
-        currentDist = 0; // Återställ tåget till bottenmitten
-        currentR = rInner;
-        targetTrack = 'inner';
-        updateButtonUI();
-        spawnBomb();
+        
+        // Starta explosionseffekt
+        explosion = { active: true, x: bombX, y: bombY, timer: 30 };
     }
 
     // --- RITA UT ALLT ---
     ctx.clearRect(0, 0, 800, 300);
     
-    // 1. Rita guider för spåren (Blått och Rött)
-    ctx.lineWidth = 46; // Passar exakt inuti de mörka väggarna (50px gap)
+    ctx.lineWidth = 46; 
     
     ctx.strokeStyle = "rgba(59, 130, 246, 0.2)"; 
     drawStadium(ctx, rInner);
@@ -196,42 +215,56 @@ function runGame() {
     ctx.strokeStyle = "rgba(239, 68, 68, 0.2)"; 
     drawStadium(ctx, rOuter);
 
-    // 2. Rita de 3 solida avgränsningsväggarna
-    ctx.strokeStyle = "#475569"; // Slate 600
+    ctx.strokeStyle = "#475569"; 
     ctx.lineWidth = 4;
-    drawStadium(ctx, 30);  // Inre
-    drawStadium(ctx, 80);  // Mitten
-    drawStadium(ctx, 130); // Yttre
+    drawStadium(ctx, 30);  
+    drawStadium(ctx, 80);  
+    drawStadium(ctx, 130); 
 
-    // 3. Rita mittpunkten
     ctx.fillStyle = "#eab308";
     ctx.beginPath();
     ctx.arc(cx, cy, 8, 0, Math.PI * 2);
     ctx.fill();
 
-    // 4. Rita Bomben
-    ctx.font = "35px Arial"; 
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
-    const pulse = 1 + 0.1 * Math.sin(Date.now() / 150);
-    ctx.save();
-    ctx.translate(bombPos.x, bombPos.y);
-    ctx.scale(pulse, pulse);
-    ctx.fillText("🧨", 0, 0);
-    ctx.restore();
+    // Rita Bomben (bara om den är aktiv)
+    if (bomb.active) {
+        ctx.font = "35px Arial"; 
+        ctx.textAlign = "center"; 
+        ctx.textBaseline = "middle";
+        const pulse = 1 + 0.1 * Math.sin(Date.now() / 150);
+        ctx.save();
+        ctx.translate(bombX, bombY);
+        ctx.scale(pulse, pulse);
+        ctx.fillText("🧨", 0, 0);
+        ctx.restore();
+    }
 
-    // 5. Rita Tåget
+    // Rita Explosion (vid krock)
+    if (explosion.active) {
+        ctx.save();
+        ctx.globalAlpha = explosion.timer / 30; // Tonar ut
+        ctx.font = "50px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("💥", explosion.x, explosion.y);
+        ctx.restore();
+        
+        explosion.timer--;
+        if (explosion.timer <= 0) explosion.active = false;
+    }
+
+    // Rita Tåget
     ctx.save();
-    ctx.translate(trainPos.x, trainPos.y);
+    ctx.translate(trainX, trainY);
+    ctx.rotate(refTrain.rot - Math.PI); 
     
-    // Tåg-emojin tittar egentligen åt VÄNSTER (180 grader). 
-    // Vi vill att den tittar åt `trainPos.rot`.
-    ctx.rotate(trainPos.rot - Math.PI); 
-    
-    // För att förhindra att den hamnar upp och ner när den åker höger, 
-    // spegelvänder vi dess Y-axel om den åker i högergående riktning!
-    if (Math.cos(trainPos.rot) > 0.01) {
+    if (Math.cos(refTrain.rot) > 0.01) {
         ctx.scale(1, -1);
+    }
+    
+    // Gör tåget genomskinligt (blinkande) om vi sprängt bomben och väntar på nästa varv
+    if (hasHitBombThisLap) {
+        ctx.globalAlpha = 0.4 + 0.3 * Math.sin(Date.now() / 50);
     }
     
     ctx.font = "40px Arial";
@@ -244,6 +277,5 @@ function runGame() {
     const hsDisplay = document.getElementById('hsDisplay');
     if(hsDisplay) hsDisplay.innerText = highScore;
 
-    // Loopa
     gameLoopId = requestAnimationFrame(runGame);
 }
