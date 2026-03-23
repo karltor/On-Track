@@ -13,7 +13,7 @@ const rInner = 55;
 const rOuter = 105;
 
 // --- SPELINSTÄLLNINGAR ---
-let baseVelocity = 1.5;  // Bas-hastighet i pixlar per frame
+let baseVelocity = 4.5;  // Bas-hastighet i pixlar per frame
 let curveSpeedMultiplier = 0.75; // Sakta ner tåget med 20% i kurvorna (0.8 = 80% hastighet)
 let velocity = baseVelocity;
 
