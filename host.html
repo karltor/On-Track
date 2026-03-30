@@ -194,8 +194,15 @@
             const p = playersData.find(p => p.id === playerId);
             const ans = p.answers[sessionData.currentBoardIndex];
             let points = 0;
-            if (status === true) points = POINTS[ans.clueIndex];
-            else if (status === 'minus') points = -5; // Straffpoäng!
+            
+            if (status === true) {
+                const basePoints = POINTS[ans.clueIndex];
+                const unlockCount = ans.unlockCount || 0;
+                points = Math.ceil(basePoints / Math.pow(2, unlockCount));
+            }
+            else if (status === 'minus') {
+                points = -5; // Straffpoäng!
+            }
 
             await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), {
                 [`answers.${sessionData.currentBoardIndex}.correct`]: status === true,
@@ -459,11 +466,16 @@
                                                 </div>
                                             `;
 
+                                            const basePoints = POINTS[ans.clueIndex];
+                                            const unlockCount = ans.unlockCount || 0;
+                                            const displayPoints = Math.ceil(basePoints / Math.pow(2, unlockCount));
+                                            const penaltyBadge = unlockCount > 0 ? `<span class="text-red-500 bg-red-100 px-1 rounded text-[10px] ml-1 font-bold" title="Svaret låstes upp ${unlockCount} gånger">÷${Math.pow(2, unlockCount)}</span>` : '';
+
                                             return `
                                                 <div class="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-100">
                                                     <div class="truncate mr-2">
-                                                        <p class="font-bold text-xs text-slate-800 truncate">${p.name}</p>
-                                                        <p class="text-xs text-slate-500 truncate">"${ans.text}" <span class="opacity-50">(${POINTS[ans.clueIndex]}p)</span></p>
+                                                        <p class="font-bold text-xs text-slate-800 truncate">${p.name} ${penaltyBadge}</p>
+                                                        <p class="text-xs text-slate-500 truncate">"${ans.text}" <span class="opacity-50">(${displayPoints}p max)</span></p>
                                                     </div>
                                                     <div class="flex items-center">
                                                         ${actions}
