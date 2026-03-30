@@ -214,6 +214,21 @@
 
         window.banPlayer = async (playerId) => { if(confirm("Kick/Banna denna spelare?")) await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { banned: true }); };
 
+        window.editPlayerName = async (playerId, currentName) => {
+            const newName = prompt("Ändra namn på eleven:", currentName);
+            if (newName && newName.trim().length > 0 && newName.trim().length <= 20) {
+                try {
+                    await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { 
+                        name: newName.trim() 
+                    });
+                } catch (error) {
+                    alert("Kunde inte uppdatera namnet. Kontrollera din anslutning.");
+                }
+            } else if (newName !== null) {
+                alert("Ogiltigt namn. Det måste vara mellan 1-20 tecken.");
+            }
+        };
+
         window.endAndCleanup = async () => {
             window.location.href = "index.html"; 
         };
@@ -251,6 +266,13 @@
 
             if (!sessionData) return;
             const appEl = document.getElementById('app');
+
+            // --- NY KOD: Spara nuvarande fokus och värde för teamSize ---
+            const activeId = document.activeElement ? document.activeElement.id : null;
+            const teamSizeInputEl = document.getElementById('teamSize');
+            const savedTeamSize = teamSizeInputEl ? teamSizeInputEl.value : '3';
+            // -----------------------------------------------------------
+
             const activePlayers = playersData.filter(p => !p.banned);
             const now = Date.now();
             let html = '';
@@ -285,7 +307,7 @@
                                 <h2 class="font-black text-lg mb-3">Laginställningar</h2>
                                 <label class="block text-xs font-bold text-slate-500 mb-1">Max elever per lag</label>
                                 <div class="flex gap-2">
-                                    <input type="number" id="teamSize" value="3" class="w-16 bg-slate-50 border border-slate-300 rounded p-2 text-sm font-bold outline-none focus:border-amber-500 text-center">
+                                    <input type="number" id="teamSize" value="${savedTeamSize}" class="w-16 bg-slate-50 border border-slate-300 rounded p-2 text-sm font-bold outline-none focus:border-amber-500 text-center">
                                     <button onclick="randomizeTeams()" class="flex-1 bg-slate-800 hover:bg-slate-900 text-white font-bold py-2 rounded transition text-sm">Slumpa Lagen</button>
                                 </div>
                             </div>
@@ -300,10 +322,14 @@
                                 <div class="space-y-1.5 flex-1 overflow-y-auto pr-1">
                                     ${unassigned.map(p => {
                                         const isOnline = (now - (p.lastActive || now)) < 15000;
+                                        const safeName = p.name.replace(/'/g, "&#39;");
                                         return `
                                         <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center bg-slate-50 hover:bg-slate-100 p-2 rounded-md border border-slate-200 text-sm cursor-grab active:cursor-grabbing ${isOnline ? '' : 'opacity-50'}">
                                             <span class="font-bold truncate pointer-events-none ${isOnline ? '' : 'line-through text-slate-400'}" title="${isOnline ? '' : 'Offline'}">${p.name}</span>
-                                            <button onclick="banPlayer('${p.id}')" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 rounded font-bold">&times;</button>
+                                            <div class="flex items-center gap-1 shrink-0">
+                                                <button onclick="editPlayerName('${p.id}', '${safeName}')" title="Ändra namn" class="text-slate-400 hover:text-blue-500 hover:bg-blue-50 px-1.5 rounded transition">✏️</button>
+                                                <button onclick="banPlayer('${p.id}')" title="Kicka spelare" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-1.5 rounded font-bold">&times;</button>
+                                            </div>
                                         </div>
                                         `;
                                     }).join('') || '<p class="text-slate-400 text-sm italic">Inga väntande elever...</p>'}
@@ -329,9 +355,13 @@
                                                 <div class="space-y-1.5 flex-1">
                                                     ${teamPlayers.map(p => {
                                                         const isOnline = (now - (p.lastActive || now)) < 15000;
+                                                        const safeName = p.name.replace(/'/g, "&#39;");
                                                         return `
-                                                        <div draggable="true" ondragstart="drag(event, '${p.id}')" class="text-xs font-semibold ${isOnline ? 'text-slate-700 bg-slate-50' : 'text-slate-400 bg-slate-100 line-through'} border border-slate-100 rounded px-2 py-1 cursor-grab active:cursor-grabbing truncate" title="${isOnline ? '' : 'Offline'}">
-                                                            ${p.name}
+                                                        <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center text-xs font-semibold ${isOnline ? 'text-slate-700 bg-slate-50' : 'text-slate-400 bg-slate-100 line-through'} border border-slate-100 rounded px-2 py-1 cursor-grab active:cursor-grabbing" title="${isOnline ? '' : 'Offline'}">
+                                                            <span class="truncate pointer-events-none">${p.name}</span>
+                                                            <div class="flex items-center gap-1 shrink-0">
+                                                                <button onclick="editPlayerName('${p.id}', '${safeName}')" title="Ändra namn" class="text-slate-400 hover:text-blue-500 hover:bg-blue-50 px-1 rounded transition">✏️</button>
+                                                            </div>
                                                         </div>
                                                     `;
                                                     }).join('') || '<span class="text-xs text-slate-400">Dra spelare hit</span>'}
@@ -449,6 +479,19 @@
                 `;
             }
             appEl.innerHTML = html;
+
+            // --- NY KOD: Återställ fokus om läraren höll på att skriva i number-fältet ---
+            if (activeId === 'teamSize') {
+                const newTeamSizeInput = document.getElementById('teamSize');
+                if (newTeamSizeInput) {
+                    newTeamSizeInput.focus();
+                    // Sätt markören på rätt ställe så att det inte hackar när man raderar
+                    if(newTeamSizeInput.type !== 'number') {
+                        newTeamSizeInput.selectionStart = newTeamSizeInput.value.length;
+                        newTeamSizeInput.selectionEnd = newTeamSizeInput.value.length;
+                    }
+                }
+            }
         }
     </script>
 </body>
