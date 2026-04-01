@@ -47,7 +47,12 @@ service cloud.firestore {
 
       // Secret answers - only the session creator can read or write
       match /private/{docId} {
-        allow read, write: if isSessionCreator(pin);
+        // För läsning, uppdatering och radering funkar vanliga get() (isSessionCreator) bra
+        allow read, update, delete: if isSessionCreator(pin);
+        
+        // Vid nyskapande (create) via batch måste vi titta in i framtiden med getAfter()
+        allow create: if isAuthenticated() && 
+                      getAfter(/databases/$(database)/documents/sessions/$(pin)).data.creatorUid == request.auth.uid;
       }
 
       // Player documents
