@@ -25,6 +25,17 @@ signInAnonymously(auth).catch(err => {
     window.showToast(`Auth-fel: ${err.code || err.message}`, "❌");
 });
 
+// --- XSS TVÄTTMASKIN ---
+export function escapeHTML(str) {
+    if (!str) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // App State
 const STORAGE_KEY = 'pa_sparet_saved_boards';
 const DEFAULTS_KEY = 'pa_sparet_imported_defaults';
@@ -161,15 +172,15 @@ export function setView(view, index = null) {
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h4 class="text-xs font-bold text-slate-400 uppercase mb-4 tracking-wider">Fråga ${i+1}</h4>
                 <div class="space-y-3 mb-6">
-                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">10p</span> <span class="text-slate-700">${q.clues[0]}</span></div>
-                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">8p</span> <span class="text-slate-700">${q.clues[1]}</span></div>
-                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">6p</span> <span class="text-slate-700">${q.clues[2]}</span></div>
-                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">4p</span> <span class="text-slate-700">${q.clues[3]}</span></div>
-                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">2p</span> <span class="text-slate-700">${q.clues[4]}</span></div>
+                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">10p</span> <span class="text-slate-700">${escapeHTML(q.clues[0])}</span></div>
+                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">8p</span> <span class="text-slate-700">${escapeHTML(q.clues[1])}</span></div>
+                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">6p</span> <span class="text-slate-700">${escapeHTML(q.clues[2])}</span></div>
+                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">4p</span> <span class="text-slate-700">${escapeHTML(q.clues[3])}</span></div>
+                    <div class="flex gap-4"><span class="font-bold text-amber-500 w-8">2p</span> <span class="text-slate-700">${escapeHTML(q.clues[4])}</span></div>
                 </div>
                 <div class="bg-emerald-50 text-emerald-800 p-4 rounded-lg border border-emerald-100 flex items-center justify-between">
                     <span class="text-sm font-semibold uppercase tracking-wider text-emerald-600">Svar</span>
-                    <span class="font-black text-xl">${q.answer}</span>
+                    <span class="font-black text-xl">${escapeHTML(q.answer)}</span>
                 </div>
             </div>
         `).join('');
@@ -178,7 +189,7 @@ export function setView(view, index = null) {
             <div class="max-w-4xl mx-auto pb-20">
                 <div class="flex justify-between items-end mb-8">
                     <div>
-                        <h2 class="text-4xl font-black text-slate-800 mb-2">${b.title}</h2>
+                        <h2 class="text-4xl font-black text-slate-800 mb-2">${escapeHTML(b.title)}</h2>
                         <p class="text-slate-500 font-medium">${b.boards.length} frågor i detta paket</p>
                     </div>
                     <div class="flex gap-3">
@@ -222,7 +233,7 @@ function renderSidebar() {
         item.className = `w-full text-left py-2 px-3 rounded-lg border transition-all cursor-pointer flex justify-between items-center ${activeClass}`;
         item.onclick = () => window.setView('view', index);
         item.innerHTML = `
-            <h3 class="font-bold text-sm ${isActive ? 'text-amber-900' : 'text-slate-700'} leading-tight pr-2">${board.title}</h3>
+            <h3 class="font-bold text-sm ${isActive ? 'text-amber-900' : 'text-slate-700'} leading-tight pr-2">${escapeHTML(board.title)}</h3>
             <span class="text-[10px] font-bold ${isActive ? 'text-amber-600' : 'text-slate-400'}">${board.boards.length}</span>
         `;
         listEl.appendChild(item);
@@ -318,29 +329,29 @@ export function renderEditForm() {
             </div>
             
             <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Rätt Svar</label>
-            <input type="text" value="${q.answer}" onchange="updateData(${qIndex}, 'answer', this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-md p-3 mb-6 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="T.ex. Paris">
+            <input type="text" value="${escapeHTML(q.answer)}" onchange="updateData(${qIndex}, 'answer', this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-md p-3 mb-6 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="T.ex. Paris">
             
             <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ledtrådar</label>
             <div class="space-y-3">
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">10p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 0)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Svåraste ledtråden...">${q.clues[0]}</textarea>
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 0)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Svåraste ledtråden...">${escapeHTML(q.clues[0])}</textarea>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">8p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 1)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Nästa ledtråd...">${q.clues[1]}</textarea>
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 1)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Nästa ledtråd...">${escapeHTML(q.clues[1])}</textarea>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">6p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 2)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="...">${q.clues[2]}</textarea>
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 2)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="...">${escapeHTML(q.clues[2])}</textarea>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">4p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 3)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="...">${q.clues[3]}</textarea>
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 3)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="...">${escapeHTML(q.clues[3])}</textarea>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">2p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 4)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Lättaste ledtråden...">${q.clues[4]}</textarea>
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 4)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Lättaste ledtråden...">${escapeHTML(q.clues[4])}</textarea>
                 </div>
             </div>
         </div>
@@ -351,7 +362,7 @@ export function renderEditForm() {
             <div class="flex justify-between items-center mb-8 sticky top-0 -mt-8 pt-8 pb-4 z-20 bg-slate-50/95 backdrop-blur border-b border-slate-200">
                 <div class="flex-1 mr-8">
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Paketets Namn</label>
-                    <textarea id="editTitle" onkeyup="editData.title = this.value" onchange="editData.title = this.value" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none resize-none h-10 min-h-[40px] focus:min-h-[90px] transition-all duration-200 leading-tight whitespace-normal" placeholder="Namn på spelbrädet...">${editData.title}</textarea>
+                    <textarea id="editTitle" onkeyup="editData.title = this.value" onchange="editData.title = this.value" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none resize-none h-10 min-h-[40px] focus:min-h-[90px] transition-all duration-200 leading-tight whitespace-normal" placeholder="Namn på spelbrädet...">${escapeHTML(editData.title)}</textarea>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="openAiEditModal()" class="px-4 py-2 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-md font-bold transition flex items-center gap-2 shadow-sm">✨ Redigera med AI</button>
