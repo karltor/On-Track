@@ -110,16 +110,6 @@
                 const newPlayers = [];
                 snap.forEach(doc => newPlayers.push({id: doc.id, ...doc.data()}));
                 
-                let shouldRender = true;
-                if (allPlayers.length > 0 && allPlayers.length === newPlayers.length) {
-                    const stripTime = p => { const { lastActive, ...rest } = p; return JSON.stringify(rest); };
-                    const oldData = allPlayers.map(stripTime).sort();
-                    const newData = newPlayers.map(stripTime).sort();
-                    if (JSON.stringify(oldData) === JSON.stringify(newData)) {
-                        shouldRender = false;
-                    }
-                }
-
                 allPlayers = newPlayers;
                 
                 if(playerId) {
@@ -135,7 +125,9 @@
                         return;
                     }
                 }
-                if (shouldRender) render();
+                
+                // Ritningen sker nu alltid när databasen uppdateras
+                render();
             });
         }
 
