@@ -441,20 +441,24 @@
                 }
             }
 
-            if (activeId === 'answerInput') {
-                const newAnswerInput = document.getElementById('answerInput');
-                if (newAnswerInput) {
-                    newAnswerInput.value = savedAnswer;
-                    newAnswerInput.focus();
-                    newAnswerInput.setSelectionRange(newAnswerInput.value.length, newAnswerInput.value.length);
-                }
-            } else if (activeId === 'playerName') {
-                const newNameInput = document.getElementById('playerName');
-                if (newNameInput) {
-                    newNameInput.value = savedName;
-                    newNameInput.focus();
-                    newNameInput.setSelectionRange(newNameInput.value.length, newNameInput.value.length);
-                }
+            // Återställ svarsrutan
+            const newAnswerInput = document.getElementById('answerInput');
+            if (newAnswerInput && savedAnswer) {
+                newAnswerInput.value = savedAnswer; // Sätt ALLTID tillbaka texten
+            }
+            if (activeId === 'answerInput' && newAnswerInput) {
+                newAnswerInput.focus(); // Sätt bara fokus om den var markerad
+                newAnswerInput.setSelectionRange(newAnswerInput.value.length, newAnswerInput.value.length);
+            }
+
+            // Återställ namnrutan
+            const newNameInput = document.getElementById('playerName');
+            if (newNameInput && savedName) {
+                newNameInput.value = savedName; // Sätt ALLTID tillbaka namnet
+            }
+            if (activeId === 'playerName' && newNameInput) {
+                newNameInput.focus(); // Sätt bara fokus om den var markerad
+                newNameInput.setSelectionRange(newNameInput.value.length, newNameInput.value.length);
             }
         }
     </script>
