@@ -658,9 +658,15 @@
 Skapa ett quizpaket om ämnet: "${promptText}". 
 Krav:
 1. Skapa exakt 5 stycken frågor ("boards").
-2. Varje fråga ska ha 1 tydligt svar (stad, person, land, händelse etc).
-3. Varje fråga måste ha exakt 5 ledtrådar i fallande svårighetsgrad (10p svårast och mest kryptisk, 2p jättelätt).
-4. Returnera ENDAST giltig JSON i exakt detta format (inga markdown-taggar, ingen extra text):
+2. Varje fråga ska ha 1 tydligt svar (stad, person, land, händelse, vetenskapligt begrepp etc).
+3. Varje fråga måste ha exakt 5 ledtrådar i fallande svårighetsgrad (10p, 8p, 6p, 4p, 2p).
+4. Språket, längden och strukturen på ledtrådarna MÅSTE följa denna exakta mall:
+   - 10p: Mycket extravagant, akademiskt, snirkligt och rikt språk. Kryptiskt men faktamässigt korrekt. Använd avancerade synonymer. Ska gärna börja med "Vi söker...". (Minst 20-30 ord).
+   - 8p: Fortfarande avancerat, ofta med historisk kontext, specifika namn, årtal eller djupare detaljer. (Ca 15-25 ord).
+   - 6p: Medelsvårt. Kopplar till välkända exempel, bredare fakta eller kända anekdoter. (Ca 15-20 ord).
+   - 4p: Standarddefinitionen, som hämtad ur en skolbok. Tydligt och rakt på sak. (Ca 10-15 ord).
+   - 2p: Mycket lätt och direkt. Ge nästan bort svaret helt, t.ex. genom första bokstaven, en extremt känd egenskap eller förkortning. (Ca 8-12 ord).
+5. Returnera ENDAST giltig JSON i exakt detta format (inga markdown-taggar, ingen extra text):
 {
   "title": "Paketets namn",
   "boards": [
