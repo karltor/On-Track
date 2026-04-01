@@ -67,29 +67,37 @@
             }
         });
 
+        // 1. Skapa variabler för att hålla koll på lyssnarna (lägg dessa precis ovanför funktionen)
+        let unsubAnswers, unsubSession, unsubPlayers;
+
         function startListeners() {
-            // Forcea en re-render var 5:e sekund för att uppdatera offline-status på elever
             setInterval(() => {
                 if(sessionData && sessionData.gameState !== 'finished') render();
             }, 5000);
-        
-            // Secret answers from private subcollection (only creator can read)
-            onSnapshot(doc(db, "sessions", sessionPin, "private", "answers"), (docSnap) => {
+
+            // 2. Spara lyssnaren i variabeln
+            unsubAnswers = onSnapshot(doc(db, "sessions", sessionPin, "private", "answers"), (docSnap) => {
                 if(finalResults) return;
                 if (docSnap.exists()) secretAnswers = docSnap.data().answers;
             });
-        
-            onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
+
+            // 3. Spara lyssnaren i variabeln
+            unsubSession = onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
                 if(finalResults) return;
-        
+
                 if (docSnap.exists()) {
                     sessionData = docSnap.data();
-        
+
                     // FRYS SPELET & STÄDA DATABASEN
                     if (sessionData.gameState === 'finished') {
                         finalResults = calculateFinalResults();
                         render(); // Rendera sista skärmen från fryst data
-        
+
+                        // 🛑 NY KOD: Stäng av alla lyssnare INNAN datan raderas!
+                        if(unsubAnswers) unsubAnswers();
+                        if(unsubSession) unsubSession();
+                        if(unsubPlayers) unsubPlayers();
+
                         // Vänta 5 sek, sen Ghost-städar vi databasen! (GDPR)
                         setTimeout(async () => {
                             try {
@@ -106,15 +114,16 @@
                     render();
                 }
             });
-        
-            onSnapshot(collection(db, "sessions", sessionPin, "players"), (querySnapshot) => {
+
+            // 4. Spara lyssnaren i variabeln
+            unsubPlayers = onSnapshot(collection(db, "sessions", sessionPin, "players"), (querySnapshot) => {
                 if(finalResults) return; 
                 
                 playersData = [];
                 querySnapshot.forEach((docSnap) => {
                     const p = { id: docSnap.id, ...docSnap.data() };
                     playersData.push(p);
-        
+
                     // Auto-rätta exakta svar (Nu säkrad mot undefined)
                     if (sessionData && sessionData.gameState === 'playing' && secretAnswers.length > 0) {
                         const ans = p.answers?.[sessionData.currentBoardIndex];
@@ -134,6 +143,7 @@
                 render();
             });
         }
+        
         function calculateFinalResults() {
             const activePlayers = playersData.filter(p => !p.banned);
             return sessionData.teams.map(team => {
