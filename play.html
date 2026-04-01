@@ -43,6 +43,17 @@
         // Expose toggleSwitch to the global scope for the HTML onclick handler
         window.toggleSwitch = toggleSwitch;
 
+        // --- XSS TVÄTTMASKIN ---
+        function escapeHTML(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         const app = initializeApp({
             apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
             authDomain: "on-track-d77d0.firebaseapp.com",
@@ -250,7 +261,7 @@
 
             if (finalResults) {
                 const { myTotalPoints, teamTotal, teamAvg, myTeam } = finalResults;
-                const teamBadge = myTeam ? `<div class="px-4 py-2 rounded-full text-sm font-bold mb-8 mx-auto w-max" style="background-color: ${myTeam.color}20; color: ${myTeam.color}; border: 1px solid ${myTeam.color}40">${myTeam.name}</div>` : '';
+                const teamBadge = myTeam ? `<div class="px-4 py-2 rounded-full text-sm font-bold mb-8 mx-auto w-max" style="background-color: ${myTeam.color}20; color: ${myTeam.color}; border: 1px solid ${myTeam.color}40">${escapeHTML(myTeam.name)}</div>` : '';
                 
                 appEl.innerHTML = `
                     <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
@@ -296,17 +307,18 @@
                 if (myTeam) {
                     const teamMates = allPlayers.filter(p => p.teamId === myTeam.id && p.id !== playerId && !p.banned);
                     
-                    let playerListHtml = teamMates.map(m => `<p class="font-bold text-2xl text-white mb-3">${m.name}</p>`).join('');
-                    playerListHtml += `<p class="font-black text-2xl text-amber-400 border-t border-slate-700/50 pt-3 mt-3">${playerData.name} (Du)</p>`;
+                    // TILLAGT: escapeHTML på lagkamrater och dig själv
+                    let playerListHtml = teamMates.map(m => `<p class="font-bold text-2xl text-white mb-3">${escapeHTML(m.name)}</p>`).join('');
+                    playerListHtml += `<p class="font-black text-2xl text-amber-400 border-t border-slate-700/50 pt-3 mt-3">${escapeHTML(playerData.name)} (Du)</p>`;
 
                     smallTeamHtml = `
                         <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700 mb-6 flex flex-col md:flex-row items-center justify-between shadow-sm gap-2">
                             <div class="text-center md:text-left">
                                 <p class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Ditt Lag</p>
-                                <p class="font-black text-xl mb-1" style="color: ${myTeam.color}">${myTeam.name}</p>
+                                <p class="font-black text-xl mb-1" style="color: ${myTeam.color}">${escapeHTML(myTeam.name)}</p>
                             </div>
                             <div class="text-center md:text-right text-xs text-slate-400 font-medium">
-                                ${teamMates.length > 0 ? `Lagkamrater:<br><span class="text-white">${teamMates.map(m => m.name).join(', ')}</span>` : 'Du är ensam i laget.'}
+                                ${teamMates.length > 0 ? `Lagkamrater:<br><span class="text-white">${teamMates.map(m => escapeHTML(m.name)).join(', ')}</span>` : 'Du är ensam i laget.'}
                             </div>
                         </div>
                     `;
@@ -314,7 +326,7 @@
                     lobbyTeamHtml = `
                         <div class="bg-slate-800 p-8 rounded-3xl border-2 border-slate-700 shadow-xl w-full max-w-sm mb-6 mx-auto">
                             <p class="text-sm text-slate-400 font-bold uppercase tracking-widest mb-2 text-center">Ditt lag</p>
-                            <p class="font-black text-4xl md:text-5xl mb-6 drop-shadow-md text-center" style="color: ${myTeam.color}">${myTeam.name}</p>
+                            <p class="font-black text-4xl md:text-5xl mb-6 drop-shadow-md text-center" style="color: ${myTeam.color}">${escapeHTML(myTeam.name)}</p>
                             <div class="bg-slate-900/80 rounded-2xl p-6 w-full border border-slate-700/50 text-center">
                                 ${playerListHtml}
                             </div>
@@ -329,7 +341,7 @@
                             <div class="w-full lg:w-1/3 flex justify-center">
                                 ${myTeam ? lobbyTeamHtml : `
                                     <div class="text-center">
-                                        <h2 class="text-5xl font-black text-white mb-4">Hej ${playerData.name}!</h2>
+                                        <h2 class="text-5xl font-black text-white mb-4">Hej ${escapeHTML(playerData.name)}!</h2>
                                         <p class="text-xl text-slate-400 font-medium">Väntar på att läraren ska dela in lag...</p>
                                     </div>
                                 `}
@@ -365,10 +377,11 @@
                     const activeClueIndex = sessionData.currentClueIndex;
                     const myAnswer = playerData.answers?.[sessionData.currentBoardIndex];
 
+                    // TILLAGT: escapeHTML på ledtrådarna utifall läraren petat in något skumt
                     let cluesHtml = currentBoard.clues.slice(0, activeClueIndex + 1).map((clue, i) => `
                         <div class="bg-slate-800 p-4 md:p-6 rounded-xl border border-slate-700 mb-3 shadow-md flex flex-col md:flex-row md:items-center gap-2 md:gap-6">
                             <span class="bg-slate-900 text-amber-500 text-sm font-black px-4 py-2 rounded-lg shrink-0 uppercase tracking-wider w-max">${POINTS[i]} poäng</span>
-                            <p class="text-lg md:text-xl font-medium text-slate-100 leading-relaxed">${clue}</p>
+                            <p class="text-lg md:text-xl font-medium text-slate-100 leading-relaxed">${escapeHTML(clue)}</p>
                         </div>
                     `).join('');
 
@@ -385,7 +398,7 @@
                         appEl.innerHTML = `${smallTeamHtml}
                             <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
                                 <p class="text-emerald-400 font-bold mb-2 uppercase tracking-widest text-sm">Svar låst!</p>
-                                <h2 class="text-4xl md:text-5xl font-black text-white mb-6">"${myAnswer.text}"</h2>
+                                <h2 class="text-4xl md:text-5xl font-black text-white mb-6">"${escapeHTML(myAnswer.text)}"</h2>
                                 <p class="text-slate-400 text-base mb-2">
                                     Låst på nivå: <span class="text-slate-300">${currentPoints}p</span> <br>
                                     Du kan få max: <span class="text-amber-400 font-bold text-xl">${potentialPoints}p</span>
@@ -430,10 +443,10 @@
                     appEl.innerHTML = `${smallTeamHtml}
                         <div class="text-center flex-1 flex flex-col justify-center max-w-2xl mx-auto w-full">
                             <p class="text-slate-400 font-bold uppercase tracking-widest text-sm mb-2">Rätt svar var</p>
-                            <h2 class="text-5xl md:text-6xl font-black text-white mb-10 drop-shadow-md break-words">${sessionData.revealedAnswer}</h2>
+                            <h2 class="text-5xl md:text-6xl font-black text-white mb-10 drop-shadow-md break-words">${escapeHTML(sessionData.revealedAnswer)}</h2>
                             
                             <div class="bg-slate-800 p-10 rounded-3xl border-2 border-slate-700 shadow-xl relative overflow-hidden w-full">
-                                ${myAnswer ? `<p class="text-slate-400 font-bold text-base mb-6">Du skrev: <span class="text-white">"${myAnswer.text}"</span></p>` : ''}
+                                ${myAnswer ? `<p class="text-slate-400 font-bold text-base mb-6">Du skrev: <span class="text-white">"${escapeHTML(myAnswer.text)}"</span></p>` : ''}
                                 ${resultHtml}
                             </div>
                         </div>
