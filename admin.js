@@ -33,6 +33,10 @@ let selectedIndex = null;
 let editData = null; 
 let boardToExport = null;
 
+// Exponera funktioner så AI.js kan modifiera det aktiva formuläret
+export function getEditData() { return editData; }
+export function setEditData(data) { editData = data; }
+
 // GLOBAL TOAST FUNKTION
 window.showToast = (msg, icon = "✨") => {
     const t = document.getElementById('toast');
@@ -303,7 +307,7 @@ window.editBoard = (index) => {
     window.setView('edit');
 };
 
-function renderEditForm() {
+export function renderEditForm() {
     const mainEl = document.getElementById('mainContent');
     
     let questionsHtml = editData.boards.map((q, qIndex) => `
@@ -335,6 +339,7 @@ function renderEditForm() {
                     <input type="text" id="editTitle" value="${editData.title}" onkeyup="editData.title = this.value" onchange="editData.title = this.value" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none" placeholder="Namn på spelbrädet...">
                 </div>
                 <div class="flex gap-2">
+                    <button onclick="openAiEditModal()" class="px-4 py-2 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-md font-bold transition flex items-center gap-2 shadow-sm">✨ Redigera med AI</button>
                     <button onclick="cancelEdit()" class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-md font-semibold transition">Avbryt</button>
                     <button onclick="saveEdit()" class="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold transition shadow-sm">Spara Ändringar</button>
                 </div>
@@ -351,6 +356,8 @@ function renderEditForm() {
         </div>
     `;
 }
+// Måste läggas till i global scope så HTML (onClick) når funktionen, eller så exporterar vi den.
+window.renderEditForm = renderEditForm;
 
 window.updateData = (qIndex, field, value, clueIndex) => {
     if (field === 'answer') {
@@ -381,7 +388,9 @@ window.cancelEdit = () => {
 };
 
 window.saveEdit = () => {
-    editData.title = document.getElementById('editTitle').value || "Namnlöst Spel";
+    // Säkra upp att titeln från textfältet sparas ifall onChange missades
+    const titleInput = document.getElementById('editTitle');
+    editData.title = titleInput ? (titleInput.value || "Namnlöst Spel") : editData.title;
     
     if (editData.editIndex !== undefined) {
         let i = editData.editIndex;
