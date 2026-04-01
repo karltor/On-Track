@@ -21,6 +21,17 @@
         import { getFirestore, doc, collection, onSnapshot, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 
+        // --- XSS TVÄTTMASKIN ---
+        function escapeHTML(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
         const app = initializeApp({
             apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
             authDomain: "on-track-d77d0.firebaseapp.com",
@@ -126,7 +137,7 @@
                     ...team, 
                     score: Math.round((totalPoints / tPlayers.length) * 10) / 10,
                     total: totalPoints,
-                    players: tPlayers.map(p => p.name).join(', ')
+                    players: tPlayers.map(p => escapeHTML(p.name)).join(', ') // TILLAGT: Tvättar namn för slutskärm
                 };
             }).sort((a,b) => b.score - a.score);
         }
@@ -329,12 +340,13 @@
                                 <div class="space-y-1.5 flex-1 overflow-y-auto pr-1">
                                     ${unassigned.map(p => {
                                         const isOnline = (now - (p.lastActive || now)) < 15000;
-                                        const safeName = p.name.replace(/'/g, "&#39;");
+                                        // TILLAGT: Säkra upp strängen för att fungera inuti ett Javascript-anrop (onclick)
+                                        const safeJsName = p.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
                                         return `
                                         <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center bg-slate-50 hover:bg-slate-100 p-2 rounded-md border border-slate-200 text-sm cursor-grab active:cursor-grabbing ${isOnline ? '' : 'opacity-50'}">
-                                            <span class="font-bold truncate pointer-events-none ${isOnline ? '' : 'line-through text-slate-400'}" title="${isOnline ? '' : 'Offline'}">${p.name}</span>
+                                            <span class="font-bold truncate pointer-events-none ${isOnline ? '' : 'line-through text-slate-400'}" title="${isOnline ? '' : 'Offline'}">${escapeHTML(p.name)}</span>
                                             <div class="flex items-center gap-1 shrink-0">
-                                                <button onclick="editPlayerName('${p.id}', '${safeName}')" title="Ändra namn" class="text-slate-400 hover:text-blue-500 hover:bg-blue-50 px-1.5 rounded transition">✏️</button>
+                                                <button onclick="editPlayerName('${p.id}', '${safeJsName}')" title="Ändra namn" class="text-slate-400 hover:text-blue-500 hover:bg-blue-50 px-1.5 rounded transition">✏️</button>
                                                 <button onclick="banPlayer('${p.id}')" title="Kicka spelare" class="text-red-500 hover:text-red-700 hover:bg-red-50 px-1.5 rounded font-bold">&times;</button>
                                             </div>
                                         </div>
@@ -362,12 +374,13 @@
                                                 <div class="space-y-1.5 flex-1">
                                                     ${teamPlayers.map(p => {
                                                         const isOnline = (now - (p.lastActive || now)) < 15000;
-                                                        const safeName = p.name.replace(/'/g, "&#39;");
+                                                        // TILLAGT: Säkra upp strängen för onclick
+                                                        const safeJsName = p.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
                                                         return `
                                                         <div draggable="true" ondragstart="drag(event, '${p.id}')" class="flex justify-between items-center text-xs font-semibold ${isOnline ? 'text-slate-700 bg-slate-50' : 'text-slate-400 bg-slate-100 line-through'} border border-slate-100 rounded px-2 py-1 cursor-grab active:cursor-grabbing" title="${isOnline ? '' : 'Offline'}">
-                                                            <span class="truncate pointer-events-none">${p.name}</span>
+                                                            <span class="truncate pointer-events-none">${escapeHTML(p.name)}</span>
                                                             <div class="flex items-center gap-1 shrink-0">
-                                                                <button onclick="editPlayerName('${p.id}', '${safeName}')" title="Ändra namn" class="text-slate-400 hover:text-blue-500 hover:bg-blue-50 px-1 rounded transition">✏️</button>
+                                                                <button onclick="editPlayerName('${p.id}', '${safeJsName}')" title="Ändra namn" class="text-slate-400 hover:text-blue-500 hover:bg-blue-50 px-1 rounded transition">✏️</button>
                                                             </div>
                                                         </div>
                                                     `;
@@ -412,7 +425,8 @@
 
                                 const lockedCount = expectedPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
                                 const expectedCount = expectedPlayers.length;
-                                const missing = expectedPlayers.filter(p => !p.answers?.[sessionData.currentBoardIndex]?.locked).map(p=>p.name).join(', ');
+                                // TILLAGT: escapeHTML på hover-verktygstipset
+                                const missing = escapeHTML(expectedPlayers.filter(p => !p.answers?.[sessionData.currentBoardIndex]?.locked).map(p=>p.name).join(', '));
                                 
                                 const fillRatio = expectedCount ? (lockedCount / expectedCount) * 100 : 0;
                                 const isDone = lockedCount === expectedCount && expectedCount > 0;
@@ -450,7 +464,8 @@
                                     <div class="space-y-2">
                                         ${teamPlayers.map(p => {
                                             const ans = p.answers?.[sessionData.currentBoardIndex];
-                                            if(!ans) return `<div class="text-xs text-slate-400 flex justify-between bg-slate-50 p-2 border border-slate-100 rounded"><span class="font-bold">${p.name}</span> Inget svar</div>`;
+                                            // TILLAGT: escapeHTML på elevnamnet
+                                            if(!ans) return `<div class="text-xs text-slate-400 flex justify-between bg-slate-50 p-2 border border-slate-100 rounded"><span class="font-bold">${escapeHTML(p.name)}</span> Inget svar</div>`;
                                             
                                             let actions = '';
                                             if(ans.correct === true) actions = `<span class="text-emerald-600 font-bold px-2">+${ans.points}p</span>`;
@@ -471,11 +486,12 @@
                                             const displayPoints = Math.ceil(basePoints / Math.pow(2, unlockCount));
                                             const penaltyBadge = unlockCount > 0 ? `<span class="text-red-500 bg-red-100 px-1 rounded text-[10px] ml-1 font-bold" title="Svaret låstes upp ${unlockCount} gånger">÷${Math.pow(2, unlockCount)}</span>` : '';
 
+                                            // TILLAGT: escapeHTML på både elevnamn och svarstext
                                             return `
                                                 <div class="flex justify-between items-center bg-slate-50 p-2 rounded border border-slate-100">
                                                     <div class="truncate mr-2">
-                                                        <p class="font-bold text-xs text-slate-800 truncate">${p.name} ${penaltyBadge}</p>
-                                                        <p class="text-xs text-slate-500 truncate">"${ans.text}" <span class="opacity-50">(${displayPoints}p max)</span></p>
+                                                        <p class="font-bold text-xs text-slate-800 truncate">${escapeHTML(p.name)} ${penaltyBadge}</p>
+                                                        <p class="text-xs text-slate-500 truncate">"${escapeHTML(ans.text)}" <span class="opacity-50">(${displayPoints}p max)</span></p>
                                                     </div>
                                                     <div class="flex items-center">
                                                         ${actions}
