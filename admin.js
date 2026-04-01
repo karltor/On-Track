@@ -321,22 +321,37 @@ export function renderEditForm() {
             <input type="text" value="${q.answer}" onchange="updateData(${qIndex}, 'answer', this.value)" class="w-full bg-slate-50 border border-slate-200 rounded-md p-3 mb-6 font-bold text-lg focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="T.ex. Paris">
             
             <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Ledtrådar</label>
-            <div class="space-y-2">
-                <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">10p</span> <input type="text" value="${q.clues[0]}" onchange="updateData(${qIndex}, 'clue', this.value, 0)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="Svåraste ledtråden..."></div>
-                <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">8p</span> <input type="text" value="${q.clues[1]}" onchange="updateData(${qIndex}, 'clue', this.value, 1)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="Nästa ledtråd..."></div>
-                <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">6p</span> <input type="text" value="${q.clues[2]}" onchange="updateData(${qIndex}, 'clue', this.value, 2)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="..."></div>
-                <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">4p</span> <input type="text" value="${q.clues[3]}" onchange="updateData(${qIndex}, 'clue', this.value, 3)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="..."></div>
-                <div class="flex items-center gap-3"><span class="font-bold text-amber-500 w-6 text-right">2p</span> <input type="text" value="${q.clues[4]}" onchange="updateData(${qIndex}, 'clue', this.value, 4)" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 focus:outline-none focus:border-amber-500" placeholder="Lättaste ledtråden..."></div>
+            <div class="space-y-3">
+                <div class="flex items-start gap-3">
+                    <span class="font-bold text-amber-500 w-6 text-right mt-2">10p</span> 
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 0)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Svåraste ledtråden...">${q.clues[0]}</textarea>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="font-bold text-amber-500 w-6 text-right mt-2">8p</span> 
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 1)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Nästa ledtråd...">${q.clues[1]}</textarea>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="font-bold text-amber-500 w-6 text-right mt-2">6p</span> 
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 2)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="...">${q.clues[2]}</textarea>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="font-bold text-amber-500 w-6 text-right mt-2">4p</span> 
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 3)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="...">${q.clues[3]}</textarea>
+                </div>
+                <div class="flex items-start gap-3">
+                    <span class="font-bold text-amber-500 w-6 text-right mt-2">2p</span> 
+                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 4)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Lättaste ledtråden...">${q.clues[4]}</textarea>
+                </div>
             </div>
         </div>
     `).join('');
 
     mainEl.innerHTML = `
         <div class="max-w-3xl mx-auto pb-20">
-            <div class="flex justify-between items-center mb-8 sticky top-0 bg-slate-50/90 backdrop-blur py-4 z-10 border-b border-slate-200">
+            <div class="flex justify-between items-center mb-8 sticky top-0 -mt-8 pt-8 pb-4 z-20 bg-slate-50/95 backdrop-blur border-b border-slate-200">
                 <div class="flex-1 mr-8">
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Paketets Namn</label>
-                    <input type="text" id="editTitle" value="${editData.title}" onkeyup="editData.title = this.value" onchange="editData.title = this.value" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none" placeholder="Namn på spelbrädet...">
+                    <textarea id="editTitle" onkeyup="editData.title = this.value" onchange="editData.title = this.value" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none resize-none h-10 min-h-[40px] focus:min-h-[90px] transition-all duration-200 leading-tight whitespace-normal" placeholder="Namn på spelbrädet...">${editData.title}</textarea>
                 </div>
                 <div class="flex gap-2">
                     <button onclick="openAiEditModal()" class="px-4 py-2 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-md font-bold transition flex items-center gap-2 shadow-sm">✨ Redigera med AI</button>
@@ -356,7 +371,7 @@ export function renderEditForm() {
         </div>
     `;
 }
-// Måste läggas till i global scope så HTML (onClick) når funktionen, eller så exporterar vi den.
+// Måste läggas till i global scope så HTML (onClick) når funktionen
 window.renderEditForm = renderEditForm;
 
 window.updateData = (qIndex, field, value, clueIndex) => {
