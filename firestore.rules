@@ -6,9 +6,23 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // Validerar att det är en nyamunken.se-adress utan 3 siffror i rad
+    function isTeacher() {
+      return isAuthenticated() 
+             && request.auth.token.email != null 
+             && request.auth.token.email.matches('.*@nyamunken\\.se') 
+             && !request.auth.token.email.matches('.*[0-9]{3}.*');
+    }
+
     function isSessionCreator(pin) {
       return isAuthenticated() &&
              request.auth.uid == get(/databases/$(database)/documents/sessions/$(pin)).data.creatorUid;
+    }
+
+    // Hemligheter (t.ex. API-nycklar). Endast inloggade lärare kan läsa.
+    match /secrets/{secretId} {
+      allow read: if isTeacher();
+      allow write: if false; // Endast du kan redigera detta via Firebase Console
     }
 
     // Shared boards: public read, authenticated create, no edits/deletes
