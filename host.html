@@ -72,25 +72,25 @@
             setInterval(() => {
                 if(sessionData && sessionData.gameState !== 'finished') render();
             }, 5000);
-
+        
             // Secret answers from private subcollection (only creator can read)
             onSnapshot(doc(db, "sessions", sessionPin, "private", "answers"), (docSnap) => {
                 if(finalResults) return;
                 if (docSnap.exists()) secretAnswers = docSnap.data().answers;
             });
-
+        
             onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
                 if(finalResults) return;
-
+        
                 if (docSnap.exists()) {
                     sessionData = docSnap.data();
-
+        
                     // FRYS SPELET & STÄDA DATABASEN
                     if (sessionData.gameState === 'finished') {
                         finalResults = calculateFinalResults();
                         render(); // Rendera sista skärmen från fryst data
-
-                        // Vänta 5 sek, sen Ghost-städar vi databasen!
+        
+                        // Vänta 5 sek, sen Ghost-städar vi databasen! (GDPR)
                         setTimeout(async () => {
                             try {
                                 const batch = writeBatch(db);
@@ -106,29 +106,34 @@
                     render();
                 }
             });
-
+        
             onSnapshot(collection(db, "sessions", sessionPin, "players"), (querySnapshot) => {
-            if(finalResults) return; 
-            
-            playersData = [];
-            querySnapshot.forEach((docSnap) => {
-                const p = { id: docSnap.id, ...docSnap.data() };
-                playersData.push(p);
-
-                // Auto-rätta exakta svar
-                if (sessionData && sessionData.gameState === 'playing' && secretAnswers.length > 0) {
-                    const ans = p.answers?.[sessionData.currentBoardIndex];
-                    const correctAns = secretAnswers[sessionData.currentBoardIndex].trim().toLowerCase();
-                    if (ans && ans.locked && ans.correct === null) {
-                        if (ans.text.trim().toLowerCase() === correctAns) markAnswer(p.id, true);
-                        else markAnswer(p.id, false);
+                if(finalResults) return; 
+                
+                playersData = [];
+                querySnapshot.forEach((docSnap) => {
+                    const p = { id: docSnap.id, ...docSnap.data() };
+                    playersData.push(p);
+        
+                    // Auto-rätta exakta svar (Nu säkrad mot undefined)
+                    if (sessionData && sessionData.gameState === 'playing' && secretAnswers.length > 0) {
+                        const ans = p.answers?.[sessionData.currentBoardIndex];
+                        const rawSecret = secretAnswers[sessionData.currentBoardIndex] || "";
+                        const correctAns = String(rawSecret).trim().toLowerCase();
+                        
+                        if (ans && ans.locked && ans.correct === null) {
+                            const playerAns = String(ans.text || "").trim().toLowerCase();
+                            if (playerAns === correctAns && correctAns !== "") {
+                                markAnswer(p.id, true);
+                            } else {
+                                markAnswer(p.id, false);
+                            }
+                        }
                     }
-                }
+                });
+                render();
             });
-            render();
-        });
-        } // end startListeners
-
+        }
         function calculateFinalResults() {
             const activePlayers = playersData.filter(p => !p.banned);
             return sessionData.teams.map(team => {
