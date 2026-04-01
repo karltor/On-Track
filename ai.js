@@ -134,7 +134,14 @@ Krav:
         const data = await response.json();
         let aiText = data.candidates[0].content.parts[0].text;
         
-        aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
+        // --- SKOTTSÄKER JSON EXTRAHERARE ---
+        // Hitta var objektet börjar och slutar, klipp bort allt skräp runtomkring.
+        const startIndex = aiText.indexOf('{');
+        const endIndex = aiText.lastIndexOf('}');
+        if (startIndex !== -1 && endIndex !== -1) {
+            aiText = aiText.substring(startIndex, endIndex + 1);
+        }
+        
         const generatedBoard = JSON.parse(aiText);
 
         boards.push(generatedBoard);
@@ -239,7 +246,13 @@ Krav för ditt svar:
         const data = await response.json();
         let aiText = data.candidates[0].content.parts[0].text;
         
-        aiText = aiText.replace(/```json/g, '').replace(/```/g, '').trim();
+        // --- SKOTTSÄKER JSON EXTRAHERARE ---
+        const startIndex = aiText.indexOf('{');
+        const endIndex = aiText.lastIndexOf('}');
+        if (startIndex !== -1 && endIndex !== -1) {
+            aiText = aiText.substring(startIndex, endIndex + 1);
+        }
+        
         const updatedBoard = JSON.parse(aiText);
 
         // Se till att bevara "editIndex" så vi inte råkar skapa ett nytt bräde när vi sparar sen!
