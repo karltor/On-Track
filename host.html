@@ -59,9 +59,12 @@
         const playUrl = `${window.location.origin}${basePath}/play.html?session=${sessionPin}`;
 
         // Wait for auth before starting listeners
-        signInAnonymously(auth);
         onAuthStateChanged(auth, (user) => {
-            if (user) startListeners();
+            if (user) {
+                startListeners(); // Du är redan inloggad (t.ex. via Google), starta direkt!
+            } else {
+                signInAnonymously(auth); // Logga bara in anonymt OM det saknas en användare
+            }
         });
 
         function startListeners() {
