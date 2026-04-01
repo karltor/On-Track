@@ -137,10 +137,12 @@
                     }
                 }
                 
-                // Ritningen sker nu alltid när databasen uppdateras
-                render();
+                // FIX: Rendera BARA om spelaren inte håller på att skriva för att undvika att tangentbordet på mobiler stängs ner
+                const activeId = document.activeElement ? document.activeElement.id : null;
+                if (activeId !== 'answerInput' && activeId !== 'playerName') {
+                    render();
+                }
             });
-        }
 
         function computeFinalResults() {
             if(!playerData || !sessionData) return;
