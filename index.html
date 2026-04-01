@@ -61,6 +61,25 @@
         </div>
     </div>
 
+    <div id="aiEditModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-50 backdrop-blur-sm opacity-0 transition-opacity duration-200">
+        <div class="bg-white p-8 rounded-3xl max-w-lg w-full shadow-2xl transform scale-95 transition-transform duration-200" id="aiEditModalContent">
+            <h3 class="text-2xl font-black mb-2 flex items-center gap-2">🛠️ Redigera med AI</h3>
+            <p class="text-slate-500 mb-6 text-sm">Vad vill du ändra i detta paket? Skriv dina instruktioner så fixar AI:n resten.</p>
+            
+            <textarea id="aiEditPrompt" class="w-full h-32 bg-slate-50 border border-slate-200 rounded-lg p-4 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent mb-4 resize-none" placeholder="T.ex. 'Gör ledtrådarna till fråga 2 mycket svårare' eller 'Byt ut sista frågan mot en fråga om Roms fall'..."></textarea>
+            
+            <div id="aiEditLoading" class="hidden flex-col items-center justify-center py-4 mb-4">
+                <div class="w-8 h-8 border-4 border-amber-500 border-t-transparent rounded-full animate-spin mb-2"></div>
+                <p class="text-sm font-bold text-amber-600 animate-pulse">AI:n analyserar och skriver om...</p>
+            </div>
+
+            <div class="flex gap-3 mt-2" id="aiEditButtons">
+                <button onclick="closeAiEditModal()" class="flex-1 px-4 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition">Avbryt</button>
+                <button onclick="submitAiEdit()" class="flex-1 px-4 py-3 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition shadow-md">Uppdatera Bräde</button>
+            </div>
+        </div>
+    </div>
+
     <aside class="w-80 bg-white border-r border-slate-200 flex flex-col shadow-sm z-10">
         <div class="p-6 border-b border-slate-100 flex items-center gap-3">
             <div class="w-10 h-10 bg-amber-500 rounded-lg flex items-center justify-center text-slate-900 shadow-md">
