@@ -54,6 +54,9 @@ async function ensureAiAuth() {
 // ------------------------------------
 // HJÄLPFUNKTION: Anropa Gemini säkert
 // ------------------------------------
+// ------------------------------------
+// HJÄLPFUNKTION: Anropa Gemini säkert v2.0
+// ------------------------------------
 async function fetchJSONFromGemini(systemInstruction, retries = 2) {
     let lastError = null;
 
@@ -70,7 +73,7 @@ async function fetchJSONFromGemini(systemInstruction, retries = 2) {
 
             if (!response.ok) {
                 if (response.status === 503) {
-                    throw new Error("503"); // Kastar ett specifikt fel vi kan fånga
+                    throw new Error("503");
                 }
                 throw new Error(`API returnerade status ${response.status}`);
             }
@@ -78,31 +81,38 @@ async function fetchJSONFromGemini(systemInstruction, retries = 2) {
             const data = await response.json();
             let aiText = data.candidates[0].content.parts[0].text;
             
-            // Försök parsa direkt (bästa scenariot)
+            // 1. Försök parsa direkt (Bästa scenariot)
             try {
                 return JSON.parse(aiText);
             } catch (parseError) {
-                // Skottsäker fallback: Städa bort markdown och hitta klamrarna
+                // 2. Skottsäker fallback 2.0 (Loop-metoden)
                 aiText = aiText.replace(/```json/gi, '').replace(/```/g, '').trim();
-                const startIndex = aiText.indexOf('{');
-                const endIndex = aiText.lastIndexOf('}');
                 
-                if (startIndex !== -1 && endIndex !== -1) {
-                    const cleanedJsonString = aiText.substring(startIndex, endIndex + 1);
-                    return JSON.parse(cleanedJsonString);
-                } else {
-                    throw new Error("Kunde inte hitta ett giltigt JSON-objekt i AI-svaret.");
+                let startIndex = aiText.indexOf('{');
+                let endIndex = aiText.lastIndexOf('}');
+                
+                // Fortsätt skala bort bakifrån om vi råkat få med skräp-måsvingar på slutet
+                while (startIndex !== -1 && endIndex > startIndex) {
+                    try {
+                        let attempt = aiText.substring(startIndex, endIndex + 1);
+                        return JSON.parse(attempt); // Lyckas det, returnera och avbryt direkt!
+                    } catch (e) {
+                        // Om det failade, hitta MÅSVINGEN FÖRE den vi nyss testade och försök igen
+                        endIndex = aiText.lastIndexOf('}', endIndex - 1);
+                    }
                 }
+                
+                // Om hela loopen körs utan att lyckas
+                throw new Error("Kunde inte hitta ett giltigt JSON-objekt i AI-svaret.");
             }
 
         } catch (error) {
             lastError = error;
-            // Om felet är en 503 överbelastning, vänta 2 sekunder och försök igen
             if (i < retries && error.message === "503") {
                 console.warn(`Fick 503. Försöker igen (Försök ${i + 1} av ${retries})...`);
                 await new Promise(res => setTimeout(res, 2000));
             } else {
-                throw lastError; // Slut på försök eller annat fel, kasta vidare
+                throw lastError; 
             }
         }
     }
