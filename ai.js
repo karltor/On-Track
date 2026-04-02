@@ -57,67 +57,111 @@ async function ensureAiAuth() {
 // ------------------------------------
 // HJÄLPFUNKTION: Anropa Gemini säkert v2.0
 // ------------------------------------
-async function fetchJSONFromGemini(systemInstruction, retries = 2) {
+// ------------------------------------
+// HJÄLPFUNKTION: Anropa Gemini säkert v3.0 (Fallback, Timeout & Loggning)
+// ------------------------------------
+async function fetchJSONFromGemini(systemInstruction, retries = 1) {
+    // Lista på modeller vi försöker med, i prioritetsordning.
+    const modelsToTry = [
+        'gemini-3.1-flash-lite-preview', 
+        'gemini-3.0-flash', // Din begärda fallback!
+        'gemini-1.5-flash'  // Sista utvägen, en extremt stabil modell
+    ];
+
     let lastError = null;
 
-    for (let i = 0; i <= retries; i++) {
-        try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiApiKey}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ parts: [{ text: systemInstruction }] }],
-                    generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
-                })
-            });
-
-            if (!response.ok) {
-                if (response.status === 503) {
-                    throw new Error("503");
-                }
-                throw new Error(`API returnerade status ${response.status}`);
-            }
-
-            const data = await response.json();
-            let aiText = data.candidates[0].content.parts[0].text;
+    for (const model of modelsToTry) {
+        console.log(`\n🤖 --- Testar AI-modell: ${model} ---`);
+        
+        for (let i = 0; i <= retries; i++) {
+            console.log(`📡 Försök ${i + 1} av ${retries + 1} för ${model}...`);
+            const startTime = Date.now();
             
-            // 1. Försök parsa direkt (Bästa scenariot)
-            try {
-                return JSON.parse(aiText);
-            } catch (parseError) {
-                // 2. Skottsäker fallback 2.0 (Loop-metoden)
-                aiText = aiText.replace(/```json/gi, '').replace(/```/g, '').trim();
-                
-                let startIndex = aiText.indexOf('{');
-                let endIndex = aiText.lastIndexOf('}');
-                
-                // Fortsätt skala bort bakifrån om vi råkat få med skräp-måsvingar på slutet
-                while (startIndex !== -1 && endIndex > startIndex) {
-                    try {
-                        let attempt = aiText.substring(startIndex, endIndex + 1);
-                        return JSON.parse(attempt); // Lyckas det, returnera och avbryt direkt!
-                    } catch (e) {
-                        // Om det failade, hitta MÅSVINGEN FÖRE den vi nyss testade och försök igen
-                        endIndex = aiText.lastIndexOf('}', endIndex - 1);
-                    }
-                }
-                
-                // Om hela loopen körs utan att lyckas
-                throw new Error("Kunde inte hitta ett giltigt JSON-objekt i AI-svaret.");
-            }
+            // Vi sätter en stenhård gräns på 20 sekunder per anrop för att undvika evighets-snurr
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 20000); 
 
-        } catch (error) {
-            lastError = error;
-            if (i < retries && error.message === "503") {
-                console.warn(`Fick 503. Försöker igen (Försök ${i + 1} av ${retries})...`);
-                await new Promise(res => setTimeout(res, 2000));
-            } else {
-                throw lastError; 
+            try {
+                const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: systemInstruction }] }],
+                        generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
+                    }),
+                    signal: controller.signal // Kopplar vår timeout till anropet
+                });
+
+                clearTimeout(timeoutId); // Rensa timeouten om vi får ett svar i tid
+
+                const timeTaken = ((Date.now() - startTime) / 1000).toFixed(1);
+                console.log(`⏱️ Svar mottaget på ${timeTaken} sekunder. Status: ${response.status}`);
+
+                if (!response.ok) {
+                    if (response.status === 503) {
+                        throw new Error("503");
+                    }
+                    throw new Error(`API returnerade status ${response.status}`);
+                }
+
+                const data = await response.json();
+                let aiText = data.candidates[0].content.parts[0].text;
+                console.log(`📝 Rå text från AI mottagen. Längd: ${aiText.length} tecken.`);
+                
+                // 1. Försök parsa direkt
+                try {
+                    const parsed = JSON.parse(aiText);
+                    console.log("✅ JSON parsades utan problem direkt!");
+                    return parsed;
+                } catch (parseError) {
+                    console.warn("⚠️ Standardparsning misslyckades. Aktiverar loop-metoden...");
+                    
+                    // 2. Skottsäker fallback (Loop-metoden)
+                    aiText = aiText.replace(/```json/gi, '').replace(/```/g, '').trim();
+                    let startIndex = aiText.indexOf('{');
+                    let endIndex = aiText.lastIndexOf('}');
+                    let loopCount = 0;
+                    
+                    while (startIndex !== -1 && endIndex > startIndex) {
+                        loopCount++;
+                        try {
+                            let attempt = aiText.substring(startIndex, endIndex + 1);
+                            const parsed = JSON.parse(attempt);
+                            console.log(`✅ JSON parsades framgångsrikt efter ${loopCount} klipp-försök!`);
+                            return parsed; 
+                        } catch (e) {
+                            endIndex = aiText.lastIndexOf('}', endIndex - 1);
+                        }
+                    }
+                    throw new Error("Kunde inte hitta ett giltigt JSON-objekt trots intensiv rensning.");
+                }
+
+            } catch (error) {
+                clearTimeout(timeoutId); // Rensa om det kraschar
+                const timeTaken = ((Date.now() - startTime) / 1000).toFixed(1);
+                
+                // Om felet är "AbortError" betyder det att våra 20 sekunder tog slut
+                const isTimeout = error.name === 'AbortError';
+                const errorMessage = isTimeout ? "Anropet tog för lång tid (Timeout 20s)" : error.message;
+                
+                console.error(`❌ Fel efter ${timeTaken} sekunder:`, errorMessage);
+                lastError = error;
+
+                if (i < retries && (errorMessage === "503" || isTimeout)) {
+                    console.warn(`⏳ Modellen strular. Väntar 2 sekunder innan nytt försök...`);
+                    await new Promise(res => setTimeout(res, 2000));
+                } else {
+                    console.warn(`⏭️ Ger upp på modell ${model}. Går vidare till nästa i listan.`);
+                    break; // Avbryter försöken för just den här modellen, går till nästa!
+                }
             }
         }
     }
+    
+    // Om vi har loopat igenom ALLA modeller och ALLA försök och inget fungerade:
+    console.error("☠️ Alla modeller och försök misslyckades totalt.");
+    throw lastError || new Error("Okänt fel vid AI-generering.");
 }
-
 // ------------------------------------
 // SKAPA NYTT BRÄDE
 // ------------------------------------
