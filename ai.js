@@ -79,7 +79,7 @@ async function fetchJSONFromGemini(systemInstruction, retries = 1) {
             
             // Vi sätter en stenhård gräns på 20 sekunder per anrop för att undvika evighets-snurr
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 20000); 
+            const timeoutId = setTimeout(() => controller.abort(), 30000); 
 
             try {
                 const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiApiKey}`, {
