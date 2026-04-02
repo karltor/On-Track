@@ -52,6 +52,63 @@ async function ensureAiAuth() {
 }
 
 // ------------------------------------
+// HJÄLPFUNKTION: Anropa Gemini säkert
+// ------------------------------------
+async function fetchJSONFromGemini(systemInstruction, retries = 2) {
+    let lastError = null;
+
+    for (let i = 0; i <= retries; i++) {
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiApiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: systemInstruction }] }],
+                    generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
+                })
+            });
+
+            if (!response.ok) {
+                if (response.status === 503) {
+                    throw new Error("503"); // Kastar ett specifikt fel vi kan fånga
+                }
+                throw new Error(`API returnerade status ${response.status}`);
+            }
+
+            const data = await response.json();
+            let aiText = data.candidates[0].content.parts[0].text;
+            
+            // Försök parsa direkt (bästa scenariot)
+            try {
+                return JSON.parse(aiText);
+            } catch (parseError) {
+                // Skottsäker fallback: Städa bort markdown och hitta klamrarna
+                aiText = aiText.replace(/```json/gi, '').replace(/```/g, '').trim();
+                const startIndex = aiText.indexOf('{');
+                const endIndex = aiText.lastIndexOf('}');
+                
+                if (startIndex !== -1 && endIndex !== -1) {
+                    const cleanedJsonString = aiText.substring(startIndex, endIndex + 1);
+                    return JSON.parse(cleanedJsonString);
+                } else {
+                    throw new Error("Kunde inte hitta ett giltigt JSON-objekt i AI-svaret.");
+                }
+            }
+
+        } catch (error) {
+            lastError = error;
+            // Om felet är en 503 överbelastning, vänta 2 sekunder och försök igen
+            if (i < retries && error.message === "503") {
+                console.warn(`Fick 503. Försöker igen (Försök ${i + 1} av ${retries})...`);
+                await new Promise(res => setTimeout(res, 2000));
+            } else {
+                throw lastError; // Slut på försök eller annat fel, kasta vidare
+            }
+        }
+    }
+}
+
+// ------------------------------------
 // SKAPA NYTT BRÄDE
 // ------------------------------------
 window.openAiModal = async () => {
@@ -120,29 +177,7 @@ Krav:
 }`;
 
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: systemInstruction }] }],
-                generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
-            })
-        });
-
-        if (!response.ok) throw new Error(`API returnerade status ${response.status}`);
-
-        const data = await response.json();
-        let aiText = data.candidates[0].content.parts[0].text;
-        
-        // --- SKOTTSÄKER JSON EXTRAHERARE ---
-        // Hitta var objektet börjar och slutar, klipp bort allt skräp runtomkring.
-        const startIndex = aiText.indexOf('{');
-        const endIndex = aiText.lastIndexOf('}');
-        if (startIndex !== -1 && endIndex !== -1) {
-            aiText = aiText.substring(startIndex, endIndex + 1);
-        }
-        
-        const generatedBoard = JSON.parse(aiText);
+        const generatedBoard = await fetchJSONFromGemini(systemInstruction);
 
         boards.push(generatedBoard);
         saveBoards();
@@ -153,19 +188,17 @@ Krav:
 
     } catch (error) {
         console.error("AI Error:", error);
-        window.showToast("Något gick fel med AI-genereringen.", "❌");
+        window.showToast(error.message === "503" ? "Servern är överbelastad, försök igen." : "Något gick fel med AI-genereringen.", "❌");
         document.getElementById('aiLoading').classList.add('hidden');
         document.getElementById('aiLoading').classList.remove('flex');
         document.getElementById('aiButtons').classList.remove('hidden');
     }
 };
 
-
 // ------------------------------------
 // REDIGERA BEFINTLIGT BRÄDE
 // ------------------------------------
 window.openAiEditModal = async () => {
-    // Säkra upp eventuella pågående ändringar i formuläret så AI:n får det senaste!
     const titleInput = document.getElementById('editTitle');
     if(titleInput) getEditData().title = titleInput.value;
 
@@ -232,33 +265,12 @@ Krav för ditt svar:
 4. Returnera ENDAST giltig JSON i exakt samma format som indatan. Inga markdown-taggar, ingen extra text.`;
 
     try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${geminiApiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: systemInstruction }] }],
-                generationConfig: { temperature: 0.7, responseMimeType: "application/json" }
-            })
-        });
+        const updatedBoard = await fetchJSONFromGemini(systemInstruction);
 
-        if (!response.ok) throw new Error(`API returnerade status ${response.status}`);
-
-        const data = await response.json();
-        let aiText = data.candidates[0].content.parts[0].text;
-        
-        // --- SKOTTSÄKER JSON EXTRAHERARE ---
-        const startIndex = aiText.indexOf('{');
-        const endIndex = aiText.lastIndexOf('}');
-        if (startIndex !== -1 && endIndex !== -1) {
-            aiText = aiText.substring(startIndex, endIndex + 1);
-        }
-        
-        const updatedBoard = JSON.parse(aiText);
-
-        // Se till att bevara "editIndex" så vi inte råkar skapa ett nytt bräde när vi sparar sen!
+        // Se till att bevara "editIndex" så vi inte råkar skapa ett nytt bräde
         updatedBoard.editIndex = currentBoard.editIndex;
         
-        // Uppdatera formuläret och rendera om!
+        // Uppdatera formuläret och rendera om
         setEditData(updatedBoard);
         renderEditForm();
         
@@ -267,7 +279,7 @@ Krav för ditt svar:
 
     } catch (error) {
         console.error("AI Error:", error);
-        window.showToast("Något gick fel med AI-redigeringen.", "❌");
+        window.showToast(error.message === "503" ? "Servern är överbelastad, försök igen." : "Något gick fel med AI-redigeringen.", "❌");
         document.getElementById('aiEditLoading').classList.add('hidden');
         document.getElementById('aiEditLoading').classList.remove('flex');
         document.getElementById('aiEditButtons').classList.remove('hidden');
