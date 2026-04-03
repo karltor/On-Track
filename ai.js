@@ -11,7 +11,7 @@ window.activeDraftIndex = 0;
 window.originalBoardBackup = null;
 window.isAiEditMode = false;
 window.tempCurrentIndex = -1; 
-window.currentAiGenId = null; // För att döda zombies
+window.currentAiGenId = null; 
 window.aiAbortController = null;
 
 // ==========================================
@@ -246,7 +246,6 @@ async function runMultiModelGeneration(apiKey, systemPrompt, userText, isEditMod
     window.isAiEditMode = isEditMode;
     let isFirstResolved = false;
 
-    // --- ZOMBIE KILLER: Skydda mot dubbelklick och gamla laddningar ---
     window.currentAiGenId = Date.now();
     const myGenId = window.currentAiGenId;
     
@@ -270,23 +269,22 @@ async function runMultiModelGeneration(apiKey, systemPrompt, userText, isEditMod
         tasks.forEach(task => {
             fetchAiModel(apiKey, systemPrompt, userText, task.model, signal)
                 .then(response => {
-                    // Stäng ute zombies!
                     if (window.currentAiGenId !== myGenId) return;
 
                     try {
                         const board = parseAiResponse(response, task.id);
                         window.aiDrafts.push({ board: board, info: task });
                         
-                        window.aiDrafts.sort((a, b) => a.info.style === 'gemini' ? -1 : 1);
+                        // NOTERA: Sorteringen är nu borttagen. De sparas i den ordning de blir klara!
 
                         if (!isFirstResolved) {
                             isFirstResolved = true;
                             try {
                                 applyAiBoard(board);
-                                resolve(); // Frige modalen!
+                                resolve(); 
                             } catch (renderError) {
                                 console.error("Krasch vid utritning av AI-data:", renderError);
-                                isFirstResolved = false; // Låt nästa modell ta över istället
+                                isFirstResolved = false; 
                                 checkFail(++failedCount, reject);
                             }
                         } else {
@@ -299,7 +297,7 @@ async function runMultiModelGeneration(apiKey, systemPrompt, userText, isEditMod
                     }
                 })
                 .catch(err => {
-                    if (err.name === 'AbortError' || window.currentAiGenId !== myGenId) return; // Ignorera avbrutna
+                    if (err.name === 'AbortError' || window.currentAiGenId !== myGenId) return; 
                     checkFail(++failedCount, reject);
                 });
         });
@@ -378,7 +376,6 @@ function parseAiResponse(data, modelId) {
             throw new Error(`Strukturfel. Paketnamn eller frågor saknas.`);
         }
 
-        // DJUP TVÄTT: Säkerställ att det alltid finns 5 clues, annars kraschar DOM:en osynligt!
         board.boards.forEach(b => {
             if (typeof b.answer !== 'string') b.answer = String(b.answer || "");
             if (!Array.isArray(b.clues)) b.clues = ["", "", "", "", ""];
@@ -445,7 +442,7 @@ window.cancelDraftSelection = (isSilent = false) => {
     window.activeDraftIndex = 0;
     window.originalBoardBackup = null;
     
-    if (window.aiAbortController) window.aiAbortController.abort(); // Döda eventuella kvarvarande laddningar när man avbryter
+    if (window.aiAbortController) window.aiAbortController.abort(); 
     
     if (!isSilent) window.showToast("AI-förslagen avfärdades.", "❌");
 };
@@ -471,7 +468,6 @@ window.renderDraftSelector = () => {
     container.innerHTML = '';
     
     const banner = document.createElement('div');
-    // Tog bort z-50 så den snällt håller sig bakom/under allt annat!
     banner.className = "bg-indigo-50 border border-indigo-200 rounded-lg p-3 my-4 flex items-center gap-3 flex-wrap shadow-sm relative";
     
     const label = document.createElement('span');
@@ -483,14 +479,25 @@ window.renderDraftSelector = () => {
         const isActive = (window.activeDraftIndex === idx);
         const btn = document.createElement('button');
         
+        // Sätt position 'relative' på knappen så att stjärnan kan fästas absolut till den
         if (isActive) {
-            btn.className = "px-4 py-2 text-sm font-black text-white bg-indigo-600 rounded-md shadow-md ring-2 ring-indigo-400 ring-offset-1 transition-all";
+            btn.className = "relative px-4 py-2 text-sm font-black text-white bg-indigo-600 rounded-md shadow-md ring-2 ring-indigo-400 ring-offset-1 transition-all";
         } else {
-            btn.className = "px-4 py-2 text-sm font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-md shadow-sm transition-all";
+            btn.className = "relative px-4 py-2 text-sm font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-md shadow-sm transition-all";
         }
         
         btn.textContent = `Alt ${idx + 1}`;
         
+        // Logik för den lilla stjärnan (om det är Flash 3 eller 3.1)
+        const isPremiumModel = draft.info.id.includes('Flash 3');
+        if (isPremiumModel) {
+            const star = document.createElement('div');
+            star.className = "absolute -top-2 -right-2 z-10 pointer-events-none"; // Placerar den uppe i högra hörnet
+            // En snygg SVG-stjärna med gul fyllning och svart ram
+            star.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#facc15" stroke="#0f172a" stroke-width="2" class="w-5 h-5 drop-shadow-sm"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>`;
+            btn.appendChild(star);
+        }
+
         btn.onclick = () => {
             if (window.activeDraftIndex === idx) return; 
             
