@@ -25,7 +25,6 @@ signInAnonymously(auth).catch(err => {
     window.showToast(`Auth-fel: ${err.code || err.message}`, "❌");
 });
 
-// --- XSS TVÄTTMASKIN ---
 export function escapeHTML(str) {
     if (!str) return '';
     return String(str)
@@ -36,7 +35,6 @@ export function escapeHTML(str) {
         .replace(/'/g, '&#39;');
 }
 
-// App State
 const STORAGE_KEY = 'pa_sparet_saved_boards';
 const DEFAULTS_KEY = 'pa_sparet_imported_defaults';
 export let boards = [];
@@ -44,11 +42,9 @@ let selectedIndex = null;
 let editData = null; 
 let boardToExport = null;
 
-// Exponera funktioner så AI.js kan modifiera det aktiva formuläret
 export function getEditData() { return editData; }
 export function setEditData(data) { editData = data; }
 
-// GLOBAL TOAST FUNKTION
 window.showToast = (msg, icon = "✨") => {
     const t = document.getElementById('toast');
     document.getElementById('toastMsg').innerText = msg;
@@ -92,9 +88,7 @@ async function loadDefaultPackages() {
                     });
                     imported.push(file); 
                 }
-            } catch (e) {
-                // Tyst ignorering om filen inte finns
-            }
+            } catch (e) {}
         }
     }
 
@@ -167,6 +161,8 @@ export function setView(view, index = null) {
     }
     else if (view === 'view' && index !== null) {
         const b = boards[index];
+        const hasDrafts = window.aiDrafts && window.aiDrafts.length > 0;
+        
         let questionsHtml = b.boards.map((q, i) => `
             <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h4 class="text-xs font-bold text-slate-400 uppercase mb-4 tracking-wider">Fråga ${i+1}</h4>
@@ -184,6 +180,31 @@ export function setView(view, index = null) {
             </div>
         `).join('');
 
+        let actionButtonsHtml = '';
+        if (hasDrafts) {
+            actionButtonsHtml = `
+                <span class="text-sm font-bold text-indigo-600 flex items-center mr-4 animate-pulse">Granskar AI-förslag...</span>
+                <button onclick="cancelDraftSelection()" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-lg font-bold transition shadow-sm">❌ Avbryt</button>
+                <button onclick="confirmDraftSelection()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black transition shadow-sm hover:scale-105 transform">✅ Spara detta</button>
+            `;
+        } else {
+            actionButtonsHtml = `
+                <button onclick="deleteBoard(${index})" class="px-4 py-2 bg-white border border-slate-200 text-red-600 hover:bg-red-50 rounded-lg font-semibold transition shadow-sm flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
+                    Radera
+                </button>
+                <button onclick="openExportModal(${index})" class="px-4 py-2 bg-white border border-slate-200 text-blue-600 hover:bg-slate-50 rounded-lg font-semibold transition shadow-sm flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" x2="12" y1="2" y2="15"></line></svg>
+                    Dela
+                </button>
+                <button onclick="editBoard(${index})" class="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg font-semibold transition shadow-sm">Redigera</button>
+                <button onclick="startSession(${index})" class="px-6 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded-lg font-black transition shadow-sm flex items-center gap-2 text-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Starta Spel
+                </button>
+            `;
+        }
+
         mainEl.innerHTML = `
             <div class="max-w-4xl mx-auto pb-20 relative">
                 <div class="flex justify-between items-end mb-4">
@@ -191,20 +212,8 @@ export function setView(view, index = null) {
                         <h2 class="text-4xl font-black text-slate-800 mb-2">${escapeHTML(b.title)}</h2>
                         <p class="text-slate-500 font-medium">${b.boards.length} frågor i detta paket</p>
                     </div>
-                    <div class="flex gap-3">
-                        <button onclick="deleteBoard(${index})" class="px-4 py-2 bg-white border border-slate-200 text-red-600 hover:bg-red-50 rounded-lg font-semibold transition shadow-sm flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path></svg>
-                            Radera
-                        </button>
-                        <button onclick="openExportModal(${index})" class="px-4 py-2 bg-white border border-slate-200 text-blue-600 hover:bg-slate-50 rounded-lg font-semibold transition shadow-sm flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"></path><polyline points="16 6 12 2 8 6"></polyline><line x1="12" x2="12" y1="2" y2="15"></line></svg>
-                            Dela
-                        </button>
-                        <button onclick="editBoard(${index})" class="px-4 py-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-lg font-semibold transition shadow-sm">Redigera</button>
-                        <button onclick="startSession(${index})" class="px-6 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded-lg font-black transition shadow-sm flex items-center gap-2 text-lg">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                            Starta Spel
-                        </button>
+                    <div class="flex gap-3 items-center">
+                        ${actionButtonsHtml}
                     </div>
                 </div>
                 
@@ -216,6 +225,11 @@ export function setView(view, index = null) {
                 <div class="mt-12 text-center text-slate-300">———</div>
             </div>
         `;
+        
+        // Nu ritar vi ut AI-knapparna HELT synkront utan delay (förebygger flimmer)
+        if (hasDrafts && typeof window.renderDraftSelector === 'function') {
+            window.renderDraftSelector();
+        }
     }
     else if (view === 'edit') {
         renderEditForm();
@@ -235,7 +249,6 @@ function renderSidebar() {
         item.className = `w-full text-left py-2 px-3 rounded-lg border transition-all cursor-pointer flex justify-between items-center ${activeClass}`;
         
         item.onclick = () => {
-            // SÄKERHETSSPÄRR: Avbryt ev. AI-utkast om användaren klickar bort sig i menyn
             if (window.aiDrafts && window.aiDrafts.length > 0 && typeof window.cancelDraftSelection === 'function') {
                 window.cancelDraftSelection(true); 
             }
@@ -317,7 +330,6 @@ window.copyShareLink = async () => {
 // REDIGERA / SKAPA LOGIK
 // ==========================================
 window.createNewBoard = () => {
-    // SÄKERHETSSPÄRR
     if (window.aiDrafts && window.aiDrafts.length > 0 && typeof window.cancelDraftSelection === 'function') {
         window.cancelDraftSelection(true); 
     }
@@ -333,6 +345,7 @@ window.editBoard = (index) => {
 
 export function renderEditForm() {
     const mainEl = document.getElementById('mainContent');
+    const hasDrafts = window.aiDrafts && window.aiDrafts.length > 0;
     
     let questionsHtml = editData.boards.map((q, qIndex) => `
         <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative">
@@ -370,6 +383,21 @@ export function renderEditForm() {
         </div>
     `).join('');
 
+    let actionButtonsHtml = '';
+    if (hasDrafts) {
+        actionButtonsHtml = `
+            <span class="text-sm font-bold text-indigo-600 flex items-center mr-4 animate-pulse">Granskar AI-förslag...</span>
+            <button onclick="cancelDraftSelection()" class="px-4 py-2 bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 rounded-md font-bold transition shadow-sm">❌ Avbryt</button>
+            <button onclick="confirmDraftSelection()" class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-black transition shadow-sm hover:scale-105 transform">✅ Spara detta</button>
+        `;
+    } else {
+        actionButtonsHtml = `
+            <button onclick="openAiEditModal()" class="px-4 py-2 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-md font-bold transition flex items-center gap-2 shadow-sm">✨ Redigera med AI</button>
+            <button onclick="cancelEdit()" class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-md font-semibold transition">Avbryt</button>
+            <button onclick="saveEdit()" class="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold transition shadow-sm">Spara Ändringar</button>
+        `;
+    }
+
     mainEl.innerHTML = `
         <div class="max-w-3xl mx-auto pb-20 relative">
             <div class="flex justify-between items-center mb-4 sticky top-0 -mt-8 pt-8 pb-4 z-20 bg-slate-50/95 backdrop-blur border-b border-slate-200">
@@ -377,10 +405,8 @@ export function renderEditForm() {
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Paketets Namn</label>
                     <textarea id="editTitle" onkeyup="editData.title = this.value" onchange="editData.title = this.value" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none resize-none h-10 min-h-[40px] focus:min-h-[90px] transition-all duration-200 leading-tight whitespace-normal" placeholder="Namn på spelbrädet...">${escapeHTML(editData.title)}</textarea>
                 </div>
-                <div class="flex gap-2">
-                    <button onclick="openAiEditModal()" class="px-4 py-2 bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300 rounded-md font-bold transition flex items-center gap-2 shadow-sm">✨ Redigera med AI</button>
-                    <button onclick="cancelEdit()" class="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded-md font-semibold transition">Avbryt</button>
-                    <button onclick="saveEdit()" class="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold transition shadow-sm">Spara Ändringar</button>
+                <div class="flex gap-2 items-center">
+                    ${actionButtonsHtml}
                 </div>
             </div>
             
@@ -396,6 +422,11 @@ export function renderEditForm() {
             </button>
         </div>
     `;
+
+    // Rita ut AI-knapparna helt synkront
+    if (hasDrafts && typeof window.renderDraftSelector === 'function') {
+        window.renderDraftSelector();
+    }
 }
 window.renderEditForm = renderEditForm;
 
@@ -420,7 +451,6 @@ window.removeQuestion = (index) => {
 };
 
 window.cancelEdit = () => {
-    // SÄKERHETSSPÄRR
     if (window.aiDrafts && window.aiDrafts.length > 0 && typeof window.cancelDraftSelection === 'function') {
         window.cancelDraftSelection(true); 
     }
