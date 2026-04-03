@@ -1,7 +1,7 @@
 import { db, auth, authReady, boards, saveBoards, setView, getEditData, setEditData, renderEditForm } from './admin.js';
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
 import { GoogleAuthProvider, signInWithPopup, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
-import { jsonrepair } from 'https://esm.sh/jsonrepair'; // Den magiska JSON-tvätten
+import { jsonrepair } from 'https://esm.sh/jsonrepair'; 
 
 let geminiApiKey = null;
 
@@ -10,7 +10,9 @@ window.aiDrafts = [];
 window.activeDraftIndex = 0;
 window.originalBoardBackup = null;
 window.isAiEditMode = false;
-window.tempCurrentIndex = -1; // Håller reda på var vi är om vi skapar ett helt nytt bräde
+window.tempCurrentIndex = -1; 
+window.currentAiGenId = null; // För att döda zombies
+window.aiAbortController = null;
 
 // ==========================================
 // 1. AUTENTISERING
@@ -18,17 +20,14 @@ window.tempCurrentIndex = -1; // Håller reda på var vi är om vi skapar ett he
 async function ensureAiAuth() {
     if (geminiApiKey) return geminiApiKey;
 
-    // 1. Vänta på att Firebase Auth ska stabilisera sig
     await authReady;
 
     let user = auth.currentUser;
     let needsPopup = true;
 
-    // Kolla om användaren redan är inloggad med Google sedan tidigare
     if (user && !user.isAnonymous && user.email) {
         needsPopup = false;
         try {
-            // 2. FORCERA en uppdatering av säkerhetstoken så Firestore fattar att vi är inloggade
             await user.getIdToken(true);
         } catch (e) {
             console.warn("Kunde inte uppdatera token, tvingar ny inloggning.");
@@ -45,7 +44,7 @@ async function ensureAiAuth() {
             user = result.user;
         }
         
-        const email = user.email.toLowerCase(); // Säkra upp för case-sensitivity
+        const email = user.email.toLowerCase(); 
         const emailPrefix = email.split('@')[0];
         const isNyamunken = email.endsWith('@nyamunken.se');
         const hasThreeDigits = /\d{3}/.test(emailPrefix); 
@@ -65,7 +64,6 @@ async function ensureAiAuth() {
                 console.error("Fel vid hämtning av nyckel:", firestoreError);
                 window.showToast("Åtkomst nekad av databasen. Försök igen.", "❌");
                 
-                // Om vi fastnat i ett ogiltigt sparat state, logga ut så nästa klick ger en popup
                 if (!needsPopup) {
                     await auth.signOut();
                     signInAnonymously(auth);
@@ -243,12 +241,21 @@ Krav för ditt svar:
 // 4. MULTI-MODEL RACE LOGIK
 // ==========================================
 async function runMultiModelGeneration(apiKey, systemPrompt, userText, isEditMode) {
-    window.aiDrafts = []; // Nollställ tidigare utkast
-    window.activeDraftIndex = 0; // VIKTIGT: Sätt detta enbart här i början!
+    window.aiDrafts = []; 
+    window.activeDraftIndex = 0; 
     window.isAiEditMode = isEditMode;
     let isFirstResolved = false;
 
-    // Laguppställningen från Jeopardy-projektet
+    // --- ZOMBIE KILLER: Skydda mot dubbelklick och gamla laddningar ---
+    window.currentAiGenId = Date.now();
+    const myGenId = window.currentAiGenId;
+    
+    if (window.aiAbortController) {
+        window.aiAbortController.abort();
+    }
+    window.aiAbortController = new AbortController();
+    const signal = window.aiAbortController.signal;
+
     const tasks = [
         { id: 'Flash 3 Preview', model: 'gemini-3-flash-preview', style: 'gemini' },
         { id: 'Flash 3.1 Lite', model: 'gemini-3.1-flash-lite-preview', style: 'gemini' },
@@ -261,31 +268,38 @@ async function runMultiModelGeneration(apiKey, systemPrompt, userText, isEditMod
         let failedCount = 0;
 
         tasks.forEach(task => {
-            fetchAiModel(apiKey, systemPrompt, userText, task.model)
+            fetchAiModel(apiKey, systemPrompt, userText, task.model, signal)
                 .then(response => {
+                    // Stäng ute zombies!
+                    if (window.currentAiGenId !== myGenId) return;
+
                     try {
                         const board = parseAiResponse(response, task.id);
                         window.aiDrafts.push({ board: board, info: task });
                         
-                        // Sortera: Gemini först, sedan Gemma (mer pålitlig struktur)
                         window.aiDrafts.sort((a, b) => a.info.style === 'gemini' ? -1 : 1);
 
                         if (!isFirstResolved) {
                             isFirstResolved = true;
-                            applyAiBoard(board);
-                            resolve(); // Släpp modalen
+                            try {
+                                applyAiBoard(board);
+                                resolve(); // Frige modalen!
+                            } catch (renderError) {
+                                console.error("Krasch vid utritning av AI-data:", renderError);
+                                isFirstResolved = false; // Låt nästa modell ta över istället
+                                checkFail(++failedCount, reject);
+                            }
                         } else {
                             if(typeof window.renderDraftSelector === 'function') {
                                 window.renderDraftSelector();
                             }
                         }
                     } catch (parseErr) {
-                        console.warn(`${task.id} returnerade trasig data.`);
                         checkFail(++failedCount, reject);
                     }
                 })
                 .catch(err => {
-                    console.warn(`${task.id} kraschade:`, err);
+                    if (err.name === 'AbortError' || window.currentAiGenId !== myGenId) return; // Ignorera avbrutna
                     checkFail(++failedCount, reject);
                 });
         });
@@ -301,7 +315,7 @@ async function runMultiModelGeneration(apiKey, systemPrompt, userText, isEditMod
 // ==========================================
 // 5. HJÄLPFUNKTIONER (FETCH & PARSE)
 // ==========================================
-async function fetchAiModel(apiKey, systemInstruction, userText, modelName) {
+async function fetchAiModel(apiKey, systemInstruction, userText, modelName, signal) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
     
     let requestBody;
@@ -325,7 +339,8 @@ async function fetchAiModel(apiKey, systemInstruction, userText, modelName) {
     const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify(requestBody),
+        signal: signal
     });
 
     if (!response.ok) throw new Error(`API-fel: ${response.status}`);
@@ -350,30 +365,29 @@ function parseAiResponse(data, modelId) {
         let possibleJson = rawText.substring(firstBrace, lastBrace + 1);
         let board;
 
-        // Steg 1: Försök parsa normalt
         try {
             let cleanAttempt = possibleJson.replace(/```json\n?/gi, '').replace(/```/g, '').trim();
             board = JSON.parse(cleanAttempt);
         } catch (initialError) {
-            // Steg 2: Skicka in jsonrepair
-            console.log(`🚑 Syntaxfel upptäckt i ${modelId}, skickar in jsonrepair för att laga det...`);
+            console.log(`🚑 Syntaxfel upptäckt i ${modelId}, skickar in jsonrepair...`);
             const repairedJson = jsonrepair(possibleJson);
             board = JSON.parse(repairedJson);
-            console.log(`✅ jsonrepair lyckades rädda datan från ${modelId}!`);
         }
         
-        // Verifiera strukturen specifikt för På Spåret
         if (!board.title || !board.boards || !Array.isArray(board.boards) || board.boards.length === 0) {
             throw new Error(`Strukturfel. Paketnamn eller frågor saknas.`);
         }
 
+        // DJUP TVÄTT: Säkerställ att det alltid finns 5 clues, annars kraschar DOM:en osynligt!
+        board.boards.forEach(b => {
+            if (typeof b.answer !== 'string') b.answer = String(b.answer || "");
+            if (!Array.isArray(b.clues)) b.clues = ["", "", "", "", ""];
+            while(b.clues.length < 5) b.clues.push("");
+        });
+
         return board;
         
     } catch (e) {
-        console.groupCollapsed(`❌ Kunde inte rädda returen från AI (${modelId})`);
-        console.log("Felmeddelande:", e.message);
-        console.log("Hela råtexten:", rawText);
-        console.groupEnd();
         throw e;
     }
 }
@@ -383,20 +397,14 @@ function parseAiResponse(data, modelId) {
 // ==========================================
 
 export async function applyAiBoard(aiData) {
-    // VIKTIGT: activeDraftIndex ändras INTE här längre för att förhindra flimmer!
-    
     if (window.isAiEditMode) {
-        // Om vi redigerar, applicera det direkt i Edit Formuläret
         if (!window.originalBoardBackup) {
             window.originalBoardBackup = JSON.parse(JSON.stringify(getEditData()));
         }
-        // Behåll samma editIndex som originalet
         aiData.editIndex = window.originalBoardBackup.editIndex;
         setEditData(aiData);
-        // admin.js ritar nu om formuläret och anropar draftSelector synkront
         renderEditForm();
     } else {
-        // Om vi skapar nytt bräde
         if (!window.originalBoardBackup) {
             window.originalBoardBackup = "NEW"; 
             boards.push(aiData);
@@ -404,38 +412,31 @@ export async function applyAiBoard(aiData) {
         } else if (window.originalBoardBackup === "NEW") {
             boards[window.tempCurrentIndex] = aiData; 
         }
-        // admin.js ritar nu om vyn och anropar draftSelector synkront
         setView('view', window.tempCurrentIndex);
     }
 }
 
 window.confirmDraftSelection = async () => {
     if (window.originalBoardBackup !== "NEW") {
-        // Redigeringsläge
         window.showToast("Alternativ valt! Du kan nu fortsätta redigera eller klicka 'Spara Ändringar'.", "✅");
     } else {
-        // Nytt bräde (Nu sparar vi permanent till local storage!)
         saveBoards();
         window.showToast("Alternativ valt och sparat!", "🎉");
     }
 
-    // Rensa utkast-minnet
     window.aiDrafts = [];
     window.activeDraftIndex = 0;
     window.originalBoardBackup = null;
     
-    // Rensa bort bannern genom att rita om den aktuella vyn
     if (window.isAiEditMode) renderEditForm();
     else setView('view', window.tempCurrentIndex);
 };
 
 window.cancelDraftSelection = (isSilent = false) => {
     if (window.originalBoardBackup && window.originalBoardBackup !== "NEW") {
-        // Återställ redigeringsdatan till vad det var innan
         setEditData(window.originalBoardBackup);
         if (!isSilent) renderEditForm();
     } else if (window.originalBoardBackup === "NEW") {
-        // Ta bort det nyskapade brädet
         boards.splice(window.tempCurrentIndex, 1);
         if (!isSilent) setView('welcome');
     }
@@ -443,6 +444,8 @@ window.cancelDraftSelection = (isSilent = false) => {
     window.aiDrafts = [];
     window.activeDraftIndex = 0;
     window.originalBoardBackup = null;
+    
+    if (window.aiAbortController) window.aiAbortController.abort(); // Döda eventuella kvarvarande laddningar när man avbryter
     
     if (!isSilent) window.showToast("AI-förslagen avfärdades.", "❌");
 };
@@ -468,7 +471,8 @@ window.renderDraftSelector = () => {
     container.innerHTML = '';
     
     const banner = document.createElement('div');
-    banner.className = "bg-indigo-50 border border-indigo-200 rounded-lg p-3 my-4 flex items-center gap-3 flex-wrap shadow-sm z-50 relative";
+    // Tog bort z-50 så den snällt håller sig bakom/under allt annat!
+    banner.className = "bg-indigo-50 border border-indigo-200 rounded-lg p-3 my-4 flex items-center gap-3 flex-wrap shadow-sm relative";
     
     const label = document.createElement('span');
     label.className = "text-sm font-bold text-indigo-800 flex items-center gap-2 mr-2";
@@ -485,7 +489,6 @@ window.renderDraftSelector = () => {
             btn.className = "px-4 py-2 text-sm font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-md shadow-sm transition-all";
         }
         
-        // Här döper vi knapparna till "Alt 1", "Alt 2" osv.
         btn.textContent = `Alt ${idx + 1}`;
         
         btn.onclick = () => {
