@@ -347,6 +347,8 @@ export function renderEditForm() {
     const mainEl = document.getElementById('mainContent');
     const hasDrafts = window.aiDrafts && window.aiDrafts.length > 0;
     
+    // 1. Här har "h-10 focus:min-h-[100px] transition-all" bytts ut mot "min-h-[40px] transition-shadow overflow-hidden"
+    // 2. oninput-event har lagts till för att auto-skala höjden när man skriver
     let questionsHtml = editData.boards.map((q, qIndex) => `
         <div class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 relative">
             <div class="flex justify-between items-center mb-4">
@@ -361,23 +363,23 @@ export function renderEditForm() {
             <div class="space-y-3">
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">10p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 0)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Svåraste ledtråden...">${escapeHTML(q.clues[0])}</textarea>
+                    <textarea oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updateData(${qIndex}, 'clue', this.value, 0)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 min-h-[40px] focus:outline-none focus:border-amber-500 resize-none transition-shadow duration-200 whitespace-normal leading-tight overflow-hidden" placeholder="Svåraste ledtråden...">${escapeHTML(q.clues[0])}</textarea>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">8p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 1)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Nästa ledtråd...">${escapeHTML(q.clues[1])}</textarea>
+                    <textarea oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updateData(${qIndex}, 'clue', this.value, 1)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 min-h-[40px] focus:outline-none focus:border-amber-500 resize-none transition-shadow duration-200 whitespace-normal leading-tight overflow-hidden" placeholder="Nästa ledtråd...">${escapeHTML(q.clues[1])}</textarea>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">6p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 2)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="...">${escapeHTML(q.clues[2])}</textarea>
+                    <textarea oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updateData(${qIndex}, 'clue', this.value, 2)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 min-h-[40px] focus:outline-none focus:border-amber-500 resize-none transition-shadow duration-200 whitespace-normal leading-tight overflow-hidden" placeholder="...">${escapeHTML(q.clues[2])}</textarea>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">4p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 3)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="...">${escapeHTML(q.clues[3])}</textarea>
+                    <textarea oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updateData(${qIndex}, 'clue', this.value, 3)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 min-h-[40px] focus:outline-none focus:border-amber-500 resize-none transition-shadow duration-200 whitespace-normal leading-tight overflow-hidden" placeholder="...">${escapeHTML(q.clues[3])}</textarea>
                 </div>
                 <div class="flex items-start gap-3">
                     <span class="font-bold text-amber-500 w-6 text-right mt-2">2p</span> 
-                    <textarea onchange="updateData(${qIndex}, 'clue', this.value, 4)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 h-10 min-h-[40px] focus:min-h-[100px] focus:outline-none focus:border-amber-500 resize-none transition-all duration-200 whitespace-normal leading-tight" placeholder="Lättaste ledtråden...">${escapeHTML(q.clues[4])}</textarea>
+                    <textarea oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onchange="updateData(${qIndex}, 'clue', this.value, 4)" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="flex-1 bg-slate-50 border border-slate-200 rounded-md p-2 min-h-[40px] focus:outline-none focus:border-amber-500 resize-none transition-shadow duration-200 whitespace-normal leading-tight overflow-hidden" placeholder="Lättaste ledtråden...">${escapeHTML(q.clues[4])}</textarea>
                 </div>
             </div>
         </div>
@@ -398,12 +400,13 @@ export function renderEditForm() {
         `;
     }
 
+    // Även titel-rutan har fått auto-höjd!
     mainEl.innerHTML = `
         <div class="max-w-3xl mx-auto pb-20 relative">
             <div class="flex justify-between items-center mb-4 sticky top-0 -mt-8 pt-8 pb-4 z-20 bg-slate-50/95 backdrop-blur border-b border-slate-200">
                 <div class="flex-1 mr-8">
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Paketets Namn</label>
-                    <textarea id="editTitle" onkeyup="editData.title = this.value" onchange="editData.title = this.value" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none resize-none h-10 min-h-[40px] focus:min-h-[90px] transition-all duration-200 leading-tight whitespace-normal" placeholder="Namn på spelbrädet...">${escapeHTML(editData.title)}</textarea>
+                    <textarea id="editTitle" oninput="this.style.height='auto'; this.style.height=this.scrollHeight+'px';" onkeyup="editData.title = this.value" onchange="editData.title = this.value" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none resize-none min-h-[44px] transition-shadow duration-200 leading-tight whitespace-normal overflow-hidden" placeholder="Namn på spelbrädet...">${escapeHTML(editData.title)}</textarea>
                 </div>
                 <div class="flex gap-2 items-center">
                     ${actionButtonsHtml}
@@ -427,6 +430,16 @@ export function renderEditForm() {
     if (hasDrafts && typeof window.renderDraftSelector === 'function') {
         window.renderDraftSelector();
     }
+
+    // --- MAGIN SKER HÄR ---
+    // Så fort gränssnittet är utritat, loopar vi igenom alla textrutor 
+    // och sätter deras initiala höjd baserat på scrollHeight (deras osynliga innehållshöjd).
+    setTimeout(() => {
+        document.querySelectorAll('#mainContent textarea').forEach(ta => {
+            ta.style.height = 'auto';
+            ta.style.height = ta.scrollHeight + 'px';
+        });
+    }, 10);
 }
 window.renderEditForm = renderEditForm;
 
