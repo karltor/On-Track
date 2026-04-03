@@ -1,4 +1,4 @@
-import { db, auth, boards, saveBoards, setView, getEditData, setEditData, renderEditForm } from './admin.js';
+import { db, auth, authReady, boards, saveBoards, setView, getEditData, setEditData, renderEditForm } from './admin.js';
 import { doc, getDoc } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
 import { GoogleAuthProvider, signInWithPopup, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 import { jsonrepair } from 'https://esm.sh/jsonrepair'; // Den magiska JSON-tvätten
@@ -18,12 +18,22 @@ window.tempCurrentIndex = -1; // Håller reda på var vi är om vi skapar ett he
 async function ensureAiAuth() {
     if (geminiApiKey) return geminiApiKey;
 
+    // 1. Vänta på att Firebase Auth ska stabilisera sig
+    await authReady;
+
     let user = auth.currentUser;
     let needsPopup = true;
 
-    // Kolla om användaren redan är inloggad med Google sedan tidigare (persisterad inloggning)
+    // Kolla om användaren redan är inloggad med Google sedan tidigare
     if (user && !user.isAnonymous && user.email) {
         needsPopup = false;
+        try {
+            // 2. FORCERA en uppdatering av säkerhetstoken så Firestore fattar att vi är inloggade
+            await user.getIdToken(true);
+        } catch (e) {
+            console.warn("Kunde inte uppdatera token, tvingar ny inloggning.");
+            needsPopup = true;
+        }
     }
     
     try {
@@ -35,7 +45,7 @@ async function ensureAiAuth() {
             user = result.user;
         }
         
-        const email = user.email;
+        const email = user.email.toLowerCase(); // Säkra upp för case-sensitivity
         const emailPrefix = email.split('@')[0];
         const isNyamunken = email.endsWith('@nyamunken.se');
         const hasThreeDigits = /\d{3}/.test(emailPrefix); 
@@ -45,7 +55,6 @@ async function ensureAiAuth() {
                 const keyDoc = await getDoc(doc(db, "secrets", "gemini"));
                 if (keyDoc.exists() && keyDoc.data().key) {
                     geminiApiKey = keyDoc.data().key;
-                    // Visa bara toast om vi faktiskt gjorde en ny inloggning
                     if (needsPopup) window.showToast("Inloggad som lärare!", "✅");
                     return geminiApiKey;
                 } else {
@@ -54,7 +63,13 @@ async function ensureAiAuth() {
                 }
             } catch (firestoreError) {
                 console.error("Fel vid hämtning av nyckel:", firestoreError);
-                window.showToast("Du har inte behörighet att läsa AI-nyckeln.", "❌");
+                window.showToast("Åtkomst nekad av databasen. Försök igen.", "❌");
+                
+                // Om vi fastnat i ett ogiltigt sparat state, logga ut så nästa klick ger en popup
+                if (!needsPopup) {
+                    await auth.signOut();
+                    signInAnonymously(auth);
+                }
                 return null;
             }
         } else {
