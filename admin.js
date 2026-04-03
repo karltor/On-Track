@@ -15,14 +15,22 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
-export const authReady = new Promise((resolve, reject) => {
-    onAuthStateChanged(auth, (user) => { if (user) resolve(user); });
-    setTimeout(() => reject(new Error("Auth timeout")), 10000);
-});
 
-signInAnonymously(auth).catch(err => {
-    console.error("Anonymous auth failed:", err);
-    window.showToast(`Auth-fel: ${err.code || err.message}`, "❌");
+// Den nya, smarta Auth-hanteraren
+export const authReady = new Promise((resolve, reject) => {
+    onAuthStateChanged(auth, (user) => { 
+        if (user) {
+            // Om Firebase hittar din sparade Google-inlogg ELLER om en anonym nyss skapades
+            resolve(user); 
+        } else {
+            // Om webbläsaren är helt tom på inloggningar, logga in tyst som anonym
+            signInAnonymously(auth).catch(err => {
+                console.error("Anonymous auth failed:", err);
+                window.showToast(`Auth-fel: ${err.code || err.message}`, "❌");
+            });
+        }
+    });
+    setTimeout(() => reject(new Error("Auth timeout")), 10000);
 });
 
 export function escapeHTML(str) {
