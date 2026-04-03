@@ -218,6 +218,7 @@ Krav för ditt svar:
 // ==========================================
 async function runMultiModelGeneration(apiKey, systemPrompt, userText, isEditMode) {
     window.aiDrafts = []; // Nollställ tidigare utkast
+    window.activeDraftIndex = 0; // VIKTIGT: Sätt detta enbart här i början!
     window.isAiEditMode = isEditMode;
     let isFirstResolved = false;
 
@@ -356,6 +357,8 @@ function parseAiResponse(data, modelId) {
 // ==========================================
 
 export async function applyAiBoard(aiData) {
+    // VIKTIGT: activeDraftIndex ändras INTE här längre för att förhindra flimmer!
+    
     if (window.isAiEditMode) {
         // Om vi redigerar, applicera det direkt i Edit Formuläret
         if (!window.originalBoardBackup) {
@@ -364,6 +367,7 @@ export async function applyAiBoard(aiData) {
         // Behåll samma editIndex som originalet
         aiData.editIndex = window.originalBoardBackup.editIndex;
         setEditData(aiData);
+        // admin.js ritar nu om formuläret och anropar draftSelector synkront
         renderEditForm();
     } else {
         // Om vi skapar nytt bräde
@@ -374,15 +378,9 @@ export async function applyAiBoard(aiData) {
         } else if (window.originalBoardBackup === "NEW") {
             boards[window.tempCurrentIndex] = aiData; 
         }
+        // admin.js ritar nu om vyn och anropar draftSelector synkront
         setView('view', window.tempCurrentIndex);
     }
-    
-    window.activeDraftIndex = 0;
-    
-    // Injicera vår banner för multi-model utkast!
-    setTimeout(() => {
-        if(typeof window.renderDraftSelector === 'function') window.renderDraftSelector();
-    }, 50);
 }
 
 window.confirmDraftSelection = async () => {
@@ -428,14 +426,11 @@ window.renderDraftSelector = () => {
 
     let container = document.getElementById('draftContainer');
     
-    // Eftersom admin.js ritar om mainContent hela tiden, måste vi vara flexibla
-    // och skjuta in vårt draftContainer-element högst upp i innehållet
     if (!container) {
         const wrapper = document.querySelector('#mainContent > div');
         if (wrapper) {
             container = document.createElement('div');
             container.id = 'draftContainer';
-            // Skjut in precis under headern/rubriken så det syns tydligt
             if (wrapper.children.length > 1) {
                 wrapper.insertBefore(container, wrapper.children[1]);
             } else {
@@ -464,7 +459,8 @@ window.renderDraftSelector = () => {
             btn.className = "px-4 py-2 text-sm font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 rounded-md shadow-sm transition-all";
         }
         
-        btn.textContent = `Alternativ ${idx + 1}`;
+        // Här döper vi knapparna till "Alt 1", "Alt 2" osv.
+        btn.textContent = `Alt ${idx + 1}`;
         
         btn.onclick = () => {
             if (window.activeDraftIndex === idx) return; 
@@ -477,15 +473,6 @@ window.renderDraftSelector = () => {
 
         banner.appendChild(btn);
     });
-
-    // Istället för att admin.js ska rita bekräftelseknappar, lägger vi dem direkt i vår egen banner!
-    const actionGroup = document.createElement('div');
-    actionGroup.className = "flex items-center gap-2 ml-auto";
-    actionGroup.innerHTML = `
-        <button onclick="cancelDraftSelection()" class="px-4 py-2 text-sm font-bold text-slate-600 bg-white border border-slate-300 hover:bg-slate-100 rounded-md shadow-sm transition">❌ Avbryt</button>
-        <button onclick="confirmDraftSelection()" class="px-6 py-2 text-sm font-black text-white bg-indigo-600 hover:bg-indigo-700 rounded-md shadow-md transition-transform hover:scale-105">✅ Spara detta</button>
-    `;
-    banner.appendChild(actionGroup);
 
     container.appendChild(banner);
 };
