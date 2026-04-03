@@ -57,7 +57,9 @@ window.showToast = (msg, icon = "✨") => {
     setTimeout(() => t.classList.add('translate-y-24', 'opacity-0'), 3500);
 };
 
-// Ladda data från LocalStorage
+// ==========================================
+// DATA LOADING & STORAGE
+// ==========================================
 function loadBoards() {
     try { boards = JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } 
     catch { boards = []; }
@@ -69,7 +71,6 @@ export function saveBoards() {
     renderSidebar();
 }
 
-// Auto-importera standardpaket
 async function loadDefaultPackages() {
     let imported = JSON.parse(localStorage.getItem(DEFAULTS_KEY)) || [];
     const filesToCheck = ['paket1.json', 'paket2.json']; 
@@ -103,7 +104,6 @@ async function loadDefaultPackages() {
     }
 }
 
-// Kolla om URL har en delningslänk
 async function checkSharedLink() {
     const urlParams = new URLSearchParams(window.location.search);
     const shareId = urlParams.get('share');
@@ -134,10 +134,9 @@ async function checkSharedLink() {
     }
 }
 
-// ----------------------------------------------------
+// ==========================================
 // UI RENDERING
-// ----------------------------------------------------
-
+// ==========================================
 export function setView(view, index = null) {
     const mainEl = document.getElementById('mainContent');
     selectedIndex = index;
@@ -186,8 +185,8 @@ export function setView(view, index = null) {
         `).join('');
 
         mainEl.innerHTML = `
-            <div class="max-w-4xl mx-auto pb-20">
-                <div class="flex justify-between items-end mb-8">
+            <div class="max-w-4xl mx-auto pb-20 relative">
+                <div class="flex justify-between items-end mb-4">
                     <div>
                         <h2 class="text-4xl font-black text-slate-800 mb-2">${escapeHTML(b.title)}</h2>
                         <p class="text-slate-500 font-medium">${b.boards.length} frågor i detta paket</p>
@@ -208,6 +207,9 @@ export function setView(view, index = null) {
                         </button>
                     </div>
                 </div>
+                
+                <div id="draftContainer" class="w-full mb-6 empty:hidden"></div>
+
                 <div class="space-y-6">
                     ${questionsHtml}
                 </div>
@@ -231,18 +233,26 @@ function renderSidebar() {
         
         const item = document.createElement('div');
         item.className = `w-full text-left py-2 px-3 rounded-lg border transition-all cursor-pointer flex justify-between items-center ${activeClass}`;
-        item.onclick = () => window.setView('view', index);
+        
+        item.onclick = () => {
+            // SÄKERHETSSPÄRR: Avbryt ev. AI-utkast om användaren klickar bort sig i menyn
+            if (window.aiDrafts && window.aiDrafts.length > 0 && typeof window.cancelDraftSelection === 'function') {
+                window.cancelDraftSelection(true); 
+            }
+            window.setView('view', index);
+        };
+
         item.innerHTML = `
-            <h3 class="font-bold text-sm ${isActive ? 'text-amber-900' : 'text-slate-700'} leading-tight pr-2">${escapeHTML(board.title)}</h3>
-            <span class="text-[10px] font-bold ${isActive ? 'text-amber-600' : 'text-slate-400'}">${board.boards.length}</span>
+            <h3 class="font-bold text-sm ${isActive ? 'text-amber-900' : 'text-slate-700'} leading-tight pr-2 truncate">${escapeHTML(board.title)}</h3>
+            <span class="text-[10px] font-bold ${isActive ? 'text-amber-600' : 'text-slate-400'} flex-shrink-0">${board.boards.length}</span>
         `;
         listEl.appendChild(item);
     });
 }
 
-// ----------------------------------------------------
+// ==========================================
 // EXPORT MODAL & DELNING
-// ----------------------------------------------------
+// ==========================================
 window.openExportModal = (index) => {
     boardToExport = boards[index];
     const modal = document.getElementById('exportModal');
@@ -303,11 +313,14 @@ window.copyShareLink = async () => {
     }
 };
 
-// ----------------------------------------------------
+// ==========================================
 // REDIGERA / SKAPA LOGIK
-// ----------------------------------------------------
-
+// ==========================================
 window.createNewBoard = () => {
+    // SÄKERHETSSPÄRR
+    if (window.aiDrafts && window.aiDrafts.length > 0 && typeof window.cancelDraftSelection === 'function') {
+        window.cancelDraftSelection(true); 
+    }
     editData = { title: "Nytt Spelbräde", boards: [{ answer: "", clues: ["","","","",""] }] };
     window.setView('edit');
 };
@@ -358,8 +371,8 @@ export function renderEditForm() {
     `).join('');
 
     mainEl.innerHTML = `
-        <div class="max-w-3xl mx-auto pb-20">
-            <div class="flex justify-between items-center mb-8 sticky top-0 -mt-8 pt-8 pb-4 z-20 bg-slate-50/95 backdrop-blur border-b border-slate-200">
+        <div class="max-w-3xl mx-auto pb-20 relative">
+            <div class="flex justify-between items-center mb-4 sticky top-0 -mt-8 pt-8 pb-4 z-20 bg-slate-50/95 backdrop-blur border-b border-slate-200">
                 <div class="flex-1 mr-8">
                     <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Paketets Namn</label>
                     <textarea id="editTitle" onkeyup="editData.title = this.value" onchange="editData.title = this.value" onkeydown="if(event.key==='Enter'){this.blur(); event.preventDefault();}" class="w-full bg-transparent text-3xl font-black text-slate-800 placeholder-slate-300 focus:outline-none resize-none h-10 min-h-[40px] focus:min-h-[90px] transition-all duration-200 leading-tight whitespace-normal" placeholder="Namn på spelbrädet...">${escapeHTML(editData.title)}</textarea>
@@ -370,6 +383,8 @@ export function renderEditForm() {
                     <button onclick="saveEdit()" class="px-6 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg font-bold transition shadow-sm">Spara Ändringar</button>
                 </div>
             </div>
+            
+            <div id="draftContainer" class="w-full mb-6 empty:hidden"></div>
             
             <div class="space-y-6">
                 ${questionsHtml}
@@ -382,7 +397,6 @@ export function renderEditForm() {
         </div>
     `;
 }
-// Måste läggas till i global scope så HTML (onClick) når funktionen
 window.renderEditForm = renderEditForm;
 
 window.updateData = (qIndex, field, value, clueIndex) => {
@@ -406,6 +420,11 @@ window.removeQuestion = (index) => {
 };
 
 window.cancelEdit = () => {
+    // SÄKERHETSSPÄRR
+    if (window.aiDrafts && window.aiDrafts.length > 0 && typeof window.cancelDraftSelection === 'function') {
+        window.cancelDraftSelection(true); 
+    }
+
     if (editData.editIndex !== undefined) {
         window.setView('view', editData.editIndex);
     } else {
@@ -414,7 +433,6 @@ window.cancelEdit = () => {
 };
 
 window.saveEdit = () => {
-    // Säkra upp att titeln från textfältet sparas ifall onChange missades
     const titleInput = document.getElementById('editTitle');
     editData.title = titleInput ? (titleInput.value || "Namnlöst Spel") : editData.title;
     
@@ -458,7 +476,9 @@ window.deleteBoard = (index) => {
     }
 };
 
+// ==========================================
 // STARTA SESSION
+// ==========================================
 window.startSession = async (index) => {
     const selectedBoard = boards[index];
     const pin = Math.floor(1000 + Math.random() * 9000).toString();
@@ -491,6 +511,16 @@ window.startSession = async (index) => {
         window.showToast(`Fel: ${error.code || error.message}`, "❌");
     }
 };
+
+// ==========================================
+// GLOBALA EVENT LISTENERS FÖR SÄKERHET
+// ==========================================
+window.addEventListener('beforeunload', (e) => {
+    if (window.aiDrafts && window.aiDrafts.length > 0) {
+        e.preventDefault();
+        e.returnValue = 'Du har obekräftade AI-alternativ. Ändringarna sparas inte om du lämnar nu.';
+    }
+});
 
 // Kör igång allting vid start
 loadBoards();
