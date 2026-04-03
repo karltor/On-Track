@@ -18,14 +18,24 @@ window.tempCurrentIndex = -1; // Håller reda på var vi är om vi skapar ett he
 async function ensureAiAuth() {
     if (geminiApiKey) return geminiApiKey;
 
-    const provider = new GoogleAuthProvider();
-    provider.setCustomParameters({ hd: 'nyamunken.se' }); 
+    let user = auth.currentUser;
+    let needsPopup = true;
+
+    // Kolla om användaren redan är inloggad med Google sedan tidigare (persisterad inloggning)
+    if (user && !user.isAnonymous && user.email) {
+        needsPopup = false;
+    }
     
     try {
-        window.showToast("Väntar på inloggning...", "⏳");
-        const result = await signInWithPopup(auth, provider);
-        const email = result.user.email;
+        if (needsPopup) {
+            window.showToast("Väntar på inloggning...", "⏳");
+            const provider = new GoogleAuthProvider();
+            provider.setCustomParameters({ hd: 'nyamunken.se' }); 
+            const result = await signInWithPopup(auth, provider);
+            user = result.user;
+        }
         
+        const email = user.email;
         const emailPrefix = email.split('@')[0];
         const isNyamunken = email.endsWith('@nyamunken.se');
         const hasThreeDigits = /\d{3}/.test(emailPrefix); 
@@ -35,7 +45,8 @@ async function ensureAiAuth() {
                 const keyDoc = await getDoc(doc(db, "secrets", "gemini"));
                 if (keyDoc.exists() && keyDoc.data().key) {
                     geminiApiKey = keyDoc.data().key;
-                    window.showToast("Inloggad som lärare!", "✅");
+                    // Visa bara toast om vi faktiskt gjorde en ny inloggning
+                    if (needsPopup) window.showToast("Inloggad som lärare!", "✅");
                     return geminiApiKey;
                 } else {
                     window.showToast("Hittade ingen API-nyckel i databasen.", "❌");
