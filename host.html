@@ -187,6 +187,7 @@
 
         // --- QR-kod Widget ---
         let qrInstance = null;
+        let qrAutoMinimized = false;
         function renderQr() {
             const canvas = document.getElementById('qrCanvas');
             if (!canvas || typeof QRCode === 'undefined') return;
@@ -212,6 +213,19 @@
                 setTimeout(renderQr, 0);
             }
         };
+
+        // Auto-minimera QR-koden när spelet startar så den inte är i vägen.
+        // (Den kan fortfarande öppnas manuellt av läraren om en elev kommer sent.)
+        function autoMinimizeQrIfPlaying() {
+            if (qrAutoMinimized) return;
+            if (sessionData && sessionData.gameState && sessionData.gameState !== 'lobby') {
+                const w = document.getElementById('qrWidget');
+                if (w && !w.classList.contains('minimized')) {
+                    w.classList.add('minimized');
+                }
+                qrAutoMinimized = true;
+            }
+        }
 
         function initQrWidget() {
             const widget = document.getElementById('qrWidget');
@@ -516,6 +530,7 @@
             }
 
             if (!sessionData) return;
+            autoMinimizeQrIfPlaying();
             const appEl = document.getElementById('app');
 
             // --- NY KOD: Spara nuvarande fokus och värde för teamSize ---
