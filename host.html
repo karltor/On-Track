@@ -340,6 +340,7 @@
                         }, 5000);
                         return;
                     }
+                    handleLateJoiners();
                     render();
                 }
             });
@@ -369,10 +370,47 @@
                         }
                     }
                 });
+
+                // Fånga upp spelare som anslutit efter att spelet startat och
+                // placera dem i ett automatiskt "Sent anslutna"-lag.
+                handleLateJoiners();
+
                 render();
             });
         }
-        
+
+        // --- SENT ANSLUTNA ---
+        const LATE_TEAM_ID = 'team_late';
+        let assigningLate = false;
+        async function handleLateJoiners() {
+            if (assigningLate) return;
+            if (!sessionData || sessionData.gameState === 'lobby' || sessionData.gameState === 'finished') return;
+
+            const lateJoiners = playersData.filter(p => !p.banned && !p.teamId);
+            if (lateJoiners.length === 0) return;
+
+            assigningLate = true;
+            try {
+                const batch = writeBatch(db);
+                const hasLateTeam = (sessionData.teams || []).some(t => t.id === LATE_TEAM_ID);
+                if (!hasLateTeam) {
+                    const newTeams = [
+                        ...(sessionData.teams || []),
+                        { id: LATE_TEAM_ID, name: 'Sent anslutna', color: '#64748b' }
+                    ];
+                    batch.update(doc(db, "sessions", sessionPin), { teams: newTeams });
+                }
+                lateJoiners.forEach(p => {
+                    batch.update(doc(db, "sessions", sessionPin, "players", p.id), { teamId: LATE_TEAM_ID });
+                });
+                await batch.commit();
+            } catch (e) {
+                console.warn("Kunde inte tilldela sent anslutna till laget:", e);
+            } finally {
+                assigningLate = false;
+            }
+        }
+
         function calculateFinalResults() {
             const activePlayers = playersData.filter(p => !p.banned);
             return sessionData.teams.map(team => {
