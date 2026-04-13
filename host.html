@@ -8,13 +8,139 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         .drag-over { background-color: #f1f5f9; border: 2px dashed #94a3b8 !important; }
+
+        /* --- QR-kod Widget --- */
+        #qrWidget {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            width: 220px;
+            height: 260px;
+            min-width: 140px;
+            min-height: 170px;
+            max-width: 90vw;
+            max-height: 90vh;
+            background: #ffffff;
+            border: 2px solid #0f172a;
+            border-radius: 12px;
+            box-shadow: 4px 4px 0px 0px rgba(15,23,42,1);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none;
+        }
+        #qrWidget.minimized {
+            width: auto !important;
+            height: auto !important;
+            min-width: 0;
+            min-height: 0;
+            padding: 0;
+        }
+        #qrResizeHandle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 18px;
+            height: 18px;
+            cursor: nwse-resize;
+            background: linear-gradient(135deg, #fbbf24 0%, #fbbf24 50%, transparent 50%);
+            border-top-left-radius: 10px;
+            z-index: 2;
+        }
+        #qrHeader {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 4px 8px 4px 22px;
+            background: #f8fafc;
+            border-bottom: 1px solid #e2e8f0;
+            flex-shrink: 0;
+        }
+        #qrHeader .qr-title {
+            font-size: 11px;
+            font-weight: 800;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #qrMinBtn {
+            background: transparent;
+            border: none;
+            color: #64748b;
+            font-weight: 900;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 14px;
+            line-height: 1;
+        }
+        #qrMinBtn:hover { background: #e2e8f0; color: #0f172a; }
+        #qrBody {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            min-height: 0;
+            overflow: hidden;
+        }
+        #qrCanvas {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #qrCanvas img, #qrCanvas canvas {
+            max-width: 100%;
+            max-height: 100%;
+            width: auto !important;
+            height: auto !important;
+            object-fit: contain;
+            display: block;
+        }
+        #qrShowBtn {
+            display: none;
+            padding: 8px 14px;
+            background: #fbbf24;
+            border: 2px solid #0f172a;
+            border-radius: 10px;
+            font-weight: 900;
+            font-size: 13px;
+            color: #0f172a;
+            cursor: pointer;
+            box-shadow: 3px 3px 0px 0px rgba(15,23,42,1);
+        }
+        #qrShowBtn:hover { background: #f59e0b; }
+        #qrWidget.minimized #qrResizeHandle,
+        #qrWidget.minimized #qrHeader,
+        #qrWidget.minimized #qrBody { display: none; }
+        #qrWidget.minimized #qrShowBtn { display: block; }
     </style>
+    <script src="https://cdn.jsdelivr.net/gh/davidshimjs/qrcodejs/qrcode.min.js"></script>
 </head>
 <body class="bg-white text-slate-900 min-h-screen font-sans selection:bg-amber-200 relative">
     <div id="app" class="max-w-7xl mx-auto p-4 md:p-8 pb-24">
         <div class="flex items-center justify-center h-64">
             <p class="text-slate-500 font-bold animate-pulse text-xl">Laddar session...</p>
         </div>
+    </div>
+
+    <!-- QR-kod Widget (Elevlänk) -->
+    <div id="qrWidget" aria-label="QR-kod för elevlänk">
+        <div id="qrResizeHandle" title="Dra för att ändra storlek"></div>
+        <div id="qrHeader">
+            <span class="qr-title">Elevlänk – QR</span>
+            <button id="qrMinBtn" title="Minimera" onclick="toggleQrWidget()">&minus;</button>
+        </div>
+        <div id="qrBody">
+            <div id="qrCanvas"></div>
+        </div>
+        <button id="qrShowBtn" onclick="toggleQrWidget()" title="Visa QR-kod">📱 Visa QR</button>
     </div>
 
     <script type="module">
@@ -58,6 +184,94 @@
 
         const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/'));
         const playUrl = `${window.location.origin}${basePath}/play.html?session=${sessionPin}`;
+
+        // --- QR-kod Widget ---
+        let qrInstance = null;
+        function renderQr() {
+            const canvas = document.getElementById('qrCanvas');
+            if (!canvas || typeof QRCode === 'undefined') return;
+            // Beräkna storlek baserat på bodyns storlek
+            const body = document.getElementById('qrBody');
+            const size = Math.max(80, Math.min(body.clientWidth, body.clientHeight) - 8);
+            canvas.innerHTML = '';
+            qrInstance = new QRCode(canvas, {
+                text: playUrl,
+                width: size,
+                height: size,
+                colorDark: '#0f172a',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.M
+            });
+        }
+
+        window.toggleQrWidget = () => {
+            const w = document.getElementById('qrWidget');
+            w.classList.toggle('minimized');
+            if (!w.classList.contains('minimized')) {
+                // Rendera om när vi öppnar igen
+                setTimeout(renderQr, 0);
+            }
+        };
+
+        function initQrWidget() {
+            const widget = document.getElementById('qrWidget');
+            const handle = document.getElementById('qrResizeHandle');
+            if (!widget || !handle) return;
+
+            // Försök ladda QR med retry om biblioteket inte hunnit in
+            let tries = 0;
+            const tryRender = () => {
+                if (typeof QRCode !== 'undefined') {
+                    renderQr();
+                } else if (tries++ < 20) {
+                    setTimeout(tryRender, 150);
+                }
+            };
+            tryRender();
+
+            // Drag i övre vänstra hörnet för att ändra storlek
+            let startX, startY, startW, startH, startRight, startBottom;
+            const onMove = (e) => {
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const dx = clientX - startX;
+                const dy = clientY - startY;
+                // Drag uppåt-vänster → större. Höger-botten hörnet är fixerat.
+                const newW = Math.max(140, Math.min(window.innerWidth - startRight - 8, startW - dx));
+                const newH = Math.max(170, Math.min(window.innerHeight - startBottom - 8, startH - dy));
+                widget.style.width = newW + 'px';
+                widget.style.height = newH + 'px';
+                e.preventDefault();
+            };
+            const onUp = () => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                document.removeEventListener('touchmove', onMove);
+                document.removeEventListener('touchend', onUp);
+                // Rendera om QR skarp i ny storlek när drag släpps
+                renderQr();
+            };
+            const onDown = (e) => {
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                startX = clientX;
+                startY = clientY;
+                const rect = widget.getBoundingClientRect();
+                startW = rect.width;
+                startH = rect.height;
+                startRight = window.innerWidth - rect.right;
+                startBottom = window.innerHeight - rect.bottom;
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+                document.addEventListener('touchmove', onMove, { passive: false });
+                document.addEventListener('touchend', onUp);
+                e.preventDefault();
+            };
+            handle.addEventListener('mousedown', onDown);
+            handle.addEventListener('touchstart', onDown, { passive: false });
+        }
+
+        initQrWidget();
 
         // Wait for auth before starting listeners
         onAuthStateChanged(auth, (user) => {
