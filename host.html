@@ -590,7 +590,7 @@
                         <div>
                             <p class="text-slate-500 font-bold uppercase tracking-wider text-sm mb-1">Gå till spelet via</p>
                             <div class="flex items-center gap-2 mt-1">
-                                <input type="text" readonly value="${playUrl}" class="bg-white border border-slate-300 font-medium text-sm px-3 py-1.5 w-64 rounded-md text-slate-700 outline-none">
+                                <input type="text" readonly value="${playUrl}" onclick="this.select()" onfocus="this.select()" class="bg-white border border-slate-300 font-medium text-sm px-3 py-1.5 w-96 rounded-md text-slate-700 outline-none">
                                 <button id="copyBtn" onclick="copyPlayUrl()" class="px-4 py-1.5 bg-white border border-slate-300 rounded-md shadow-sm text-sm font-bold hover:bg-slate-50 transition">Kopiera Elevlänk</button>
                             </div>
                         </div>
