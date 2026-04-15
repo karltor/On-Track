@@ -421,10 +421,15 @@ window.confirmDraftSelection = async () => {
         window.showToast("Alternativ valt och sparat!", "🎉");
     }
 
+    // Avbryt alla AI-anrop som fortfarande är på väg in, så att senare svar
+    // inte återskapar alternativs-rutan efter att användaren redan har valt.
+    if (window.aiAbortController) window.aiAbortController.abort();
+    window.currentAiGenId = null;
+
     window.aiDrafts = [];
     window.activeDraftIndex = 0;
     window.originalBoardBackup = null;
-    
+
     if (window.isAiEditMode) renderEditForm();
     else setView('view', window.tempCurrentIndex);
 };
