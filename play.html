@@ -85,6 +85,18 @@
         let finalResults = null;
         const POINTS = [10, 8, 6, 4, 2];
 
+        // Lyssnarhantering (split för att banta reads):
+        // - collection(...players) är DYR: varje write av en elev triggar 1 read per
+        //   elev som lyssnar. Därför attach:ad BARA under 'lobby' och 'finished'
+        //   (då eleven faktiskt behöver se hela laget).
+        // - Under 'playing' och 'revealing' lyssnar eleven bara på sitt eget dokument.
+        //   All fan-out mellan elever försvinner.
+        let unsubCollection = null;
+        let unsubOwnDoc = null;
+        // Senast hanterade ping-request så vi bara svarar på nya pingningar
+        // (null = första snapshot, skippa första gången så vi inte svarar på gammalt)
+        let lastSeenPing = null;
+
         // --- FIREBASE SYNC ---
         // Wait for anonymous auth before starting Firebase operations
         signInAnonymously(auth);
@@ -93,24 +105,28 @@
         });
 
         function startListeners() {
-            // Hjärtslag: uppdaterar lastActive så läraren kan se vilka elever som är online.
-            // Intervallet måste vara klart mindre än online-tröskeln i host.html (45s) så att en
-            // elev som fortfarande är online aldrig hinner falla ur fönstret. 25s ger marginal.
-            // OBS: varje skrivning triggar lärarens players-listener -> 1 read per elev.
-            // Att sänka frekvensen ger linjär besparing av reads.
-            setInterval(() => {
-                if (playerId && sessionData && !finalResults) {
-                    updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { lastActive: Date.now() }).catch(() => {});
-                }
-            }, 25000);
-
             onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
-                if (finalResults) return; 
+                if (finalResults) return;
                 if (docSnap.exists()) {
                     sessionData = docSnap.data();
-                    if(sessionData.gameState === 'finished') {
-                        computeFinalResults();
-                    } else {
+
+                    // Svara på lärarens ping: skriv lastActive så läraren ser oss som online.
+                    // Initial snapshot (lastSeenPing === null) räknas inte - vi svarar bara
+                    // när pingRequest ökar efter att sidan laddats.
+                    const currentPing = sessionData.pingRequest || 0;
+                    if (lastSeenPing !== null && currentPing > lastSeenPing && playerId) {
+                        updateDoc(doc(db, "sessions", sessionPin, "players", playerId),
+                            { lastActive: Date.now() }).catch(() => {});
+                    }
+                    lastSeenPing = currentPing;
+
+                    managePlayersListener();
+
+                    // I 'finished'-läget räknas slutresultat först när collection-
+                    // lyssnaren levererat färska data (attach:as via managePlayersListener
+                    // ovan). Vi låter collection-callbacken anropa computeFinalResults
+                    // där nedan. För alla andra states renderar vi direkt.
+                    if(sessionData.gameState !== 'finished') {
                         render();
                     }
                 } else {
@@ -118,17 +134,40 @@
                         document.getElementById('app').innerHTML = '<h1 class="text-center text-red-400 font-bold text-2xl mt-12">Spelet är stängt av din lärare.</h1>';
                         localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
                     }
+                    // Koppla bort lyssnare så vi inte får reads på varje delete i lärarens cleanup-batch
+                    detachCollection();
+                    detachOwnDoc();
                 }
             });
+        }
 
-            onSnapshot(collection(db, "sessions", sessionPin, "players"), (snap) => {
-                if(finalResults) return; 
-                
+        // Växlar elevens players-lyssning beroende på gameState.
+        // 'lobby' + 'finished' -> hela collectionen (vi visar lagkamrater/resultat)
+        // 'playing' + 'revealing' -> bara vårt eget dokument (ingen fan-out, massivt billigare)
+        function managePlayersListener() {
+            if (!sessionData) return;
+            const state = sessionData.gameState;
+            const needCollection = (state === 'lobby' || state === 'finished');
+            const needOwnOnly = (state === 'playing' || state === 'revealing');
+
+            if (needCollection) {
+                detachOwnDoc();
+                attachCollection();
+            } else if (needOwnOnly) {
+                detachCollection();
+                attachOwnDoc();
+            }
+        }
+
+        function attachCollection() {
+            if (unsubCollection) return;
+            unsubCollection = onSnapshot(collection(db, "sessions", sessionPin, "players"), (snap) => {
+                if(finalResults) return;
+
                 const newPlayers = [];
-                snap.forEach(doc => newPlayers.push({id: doc.id, ...doc.data()}));
-                
+                snap.forEach(d => newPlayers.push({id: d.id, ...d.data()}));
                 allPlayers = newPlayers;
-                
+
                 if(playerId) {
                     playerData = allPlayers.find(p => p.id === playerId);
                     if(playerData && playerData.uid && playerData.uid !== auth.currentUser.uid) {
@@ -142,14 +181,59 @@
                         return;
                     }
                 }
-                
-                // FIX: Rendera BARA om spelaren inte håller på att skriva för att undvika att tangentbordet på mobiler stängs ner
+
+                // När spelet är slut använder vi färsk collection-data för att räkna
+                // ut slutresultat (behövs för lagets totalpoäng).
+                if (sessionData && sessionData.gameState === 'finished' && !finalResults) {
+                    computeFinalResults();
+                    return;
+                }
+
                 const activeId = document.activeElement ? document.activeElement.id : null;
                 if (activeId !== 'answerInput' && activeId !== 'playerName') {
                     render();
                 }
             });
-            }
+        }
+
+        function detachCollection() {
+            if (unsubCollection) { unsubCollection(); unsubCollection = null; }
+        }
+
+        function attachOwnDoc() {
+            if (unsubOwnDoc || !playerId) return;
+            unsubOwnDoc = onSnapshot(doc(db, "sessions", sessionPin, "players", playerId), (docSnap) => {
+                if (finalResults) return;
+                if (!docSnap.exists()) return;
+
+                playerData = { id: docSnap.id, ...docSnap.data() };
+                // Håll allPlayers-cachen i synk så render() hittar oss
+                const idx = allPlayers.findIndex(p => p.id === playerId);
+                if (idx >= 0) allPlayers[idx] = playerData; else allPlayers.push(playerData);
+
+                if (playerData.uid && playerData.uid !== auth.currentUser.uid) {
+                    localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
+                    playerId = null;
+                    playerData = null;
+                    return;
+                }
+                if (playerData.banned) {
+                    localStorage.removeItem(`pa_sparet_player_${sessionPin}`);
+                    document.getElementById('app').innerHTML = '<h1 class="text-center text-red-500 font-black text-3xl mt-20">Utkastad</h1><p class="text-center text-slate-400 mt-2">Din lärare har tagit bort dig från spelet.</p>';
+                    return;
+                }
+
+                const activeId = document.activeElement ? document.activeElement.id : null;
+                if (activeId !== 'answerInput' && activeId !== 'playerName') {
+                    render();
+                }
+            });
+        }
+
+        function detachOwnDoc() {
+            if (unsubOwnDoc) { unsubOwnDoc(); unsubOwnDoc = null; }
+        }
+
         function computeFinalResults() {
             if(!playerData || !sessionData) return;
             const myTeam = sessionData.teams?.find(t => t.id === playerData.teamId);
@@ -165,6 +249,11 @@
 
             finalResults = { myTotalPoints, teamTotal, teamAvg, myTeam };
             render();
+
+            // Slutresultat är beräknat - lossa lyssnare så lärarens städnings-deletes
+            // inte debiterar oss fler reads. (Session-lyssnaren behövs inte heller mer.)
+            detachCollection();
+            detachOwnDoc();
         }
 
         window.joinGame = async (e) => {
@@ -184,6 +273,10 @@
 
                 playerData = { id: playerId, name: name, teamId: null, banned: false, answers: {}, lastActive: Date.now(), uid: auth.currentUser.uid };
                 allPlayers.push(playerData);
+                // Om vi gått med senare än spelstart (t.ex. under 'playing') måste vi
+                // attach:a egen-dokument-lyssnaren här eftersom den inte kunde kopplas
+                // på första session-snapshoten (då saknades playerId).
+                managePlayersListener();
                 render();
             } catch (err) {
                 console.error("Fel vid anslutning:", err);
