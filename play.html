@@ -93,11 +93,16 @@
         });
 
         function startListeners() {
+            // Hjärtslag: uppdaterar lastActive så läraren kan se vilka elever som är online.
+            // Intervallet måste vara klart mindre än online-tröskeln i host.html (45s) så att en
+            // elev som fortfarande är online aldrig hinner falla ur fönstret. 25s ger marginal.
+            // OBS: varje skrivning triggar lärarens players-listener -> 1 read per elev.
+            // Att sänka frekvensen ger linjär besparing av reads.
             setInterval(() => {
                 if (playerId && sessionData && !finalResults) {
                     updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { lastActive: Date.now() }).catch(() => {});
                 }
-            }, 5000);
+            }, 25000);
 
             onSnapshot(doc(db, "sessions", sessionPin), (docSnap) => {
                 if (finalResults) return; 

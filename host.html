@@ -625,7 +625,7 @@
                                 
                                 <div class="space-y-1.5 flex-1 overflow-y-auto pr-1">
                                     ${unassigned.map(p => {
-                                        const isOnline = (now - (p.lastActive || now)) < 15000;
+                                        const isOnline = (now - (p.lastActive || now)) < 45000;
                                         // TILLAGT: Säkra upp strängen för att fungera inuti ett Javascript-anrop (onclick)
                                         const safeJsName = p.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
                                         return `
@@ -659,7 +659,7 @@
                                                 <h3 class="font-black text-sm mb-3 text-slate-800 truncate" title="${team.name}">${team.name}</h3>
                                                 <div class="space-y-1.5 flex-1">
                                                     ${teamPlayers.map(p => {
-                                                        const isOnline = (now - (p.lastActive || now)) < 15000;
+                                                        const isOnline = (now - (p.lastActive || now)) < 45000;
                                                         // TILLAGT: Säkra upp strängen för onclick
                                                         const safeJsName = p.name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
                                                         return `
@@ -704,7 +704,7 @@
 
                                 // Räkna bara förväntade svar om spelaren är online ELLER redan har låst
                                 const expectedPlayers = teamPlayers.filter(p => {
-                                    const isOnline = (now - (p.lastActive || 0)) < 15000;
+                                    const isOnline = (now - (p.lastActive || 0)) < 45000;
                                     const hasLocked = p.answers?.[sessionData.currentBoardIndex]?.locked;
                                     return isOnline || hasLocked;
                                 });
