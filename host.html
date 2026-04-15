@@ -471,16 +471,11 @@
 
         window.changeTeam = async (playerId, newTeamId) => updateDoc(doc(db, "sessions", sessionPin, "players", playerId), { teamId: newTeamId });
 
-        // Skickar ut en "ping-förfrågan" till alla elever. När pingRequest-fältet
-        // på session-dokumentet ändras svarar varje elev genom att skriva sitt eget
-        // lastActive. Kostar 1 write + (N reads för elevernas session-listeners) +
-        // (N player-writes) + (N reads för lärarens players-listener) ≈ 3N reads
-        // per ping - men ersätter hundratals periodiska hjärtslag.
-        window.pingStudents = async () => {
-            try {
-                await updateDoc(doc(db, "sessions", sessionPin), { pingRequest: Date.now() });
-            } catch(e) {}
-        };
+        // Ping-mekaniken är helt automatisk och pedagogiskt osynlig för läraren:
+        // pingRequest-fältet sätts i de state-transitions där online-status faktiskt
+        // spelar roll (startGame, revealAnswer). Elever svarar med lastActive-write.
+        // Ingen manuell knapp - det skulle bara inbjuda till onödigt klickande /
+        // autoklickare och bränna reads utan pedagogiskt värde.
 
         window.startGame = () => {
             // Filtrera bort tomma lag
@@ -650,7 +645,6 @@
                                  ondrop="drop(event, 'null')" ondragover="allowDrop(event)" ondragleave="leaveDrop(event)">
                                 <div class="flex justify-between items-center mb-2">
                                     <h2 class="font-black text-lg">Väntrum (${unassigned.length})</h2>
-                                    <button onclick="pingStudents()" title="Kolla vilka elever som fortfarande är online" class="text-xs font-bold bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-600 px-2 py-1 rounded transition">📶 Pinga</button>
                                 </div>
                                 <p class="text-xs text-slate-400 mb-3">Dra och släpp elever för att byta lag.</p>
                                 
@@ -722,7 +716,6 @@
                             <h2 class="text-3xl font-black text-slate-800 leading-tight">${currentBoard.clues[sessionData.currentClueIndex]}</h2>
                         </div>
                         <div class="flex justify-center gap-3">
-                            <button onclick="pingStudents()" title="Fråga alla elever om de fortfarande är online" class="px-4 py-2 bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-sm shadow-sm">📶 Pinga elever</button>
                             ${sessionData.currentClueIndex < 4 ? `<button onclick="nextClue()" class="px-6 py-2 bg-slate-100 border border-slate-300 hover:bg-slate-200 text-slate-700 font-bold rounded-lg transition text-sm shadow-sm">Nästa ledtråd</button>` : ''}
                             <button onclick="revealAnswer()" class="px-6 py-2 bg-amber-400 hover:bg-amber-500 text-slate-900 font-bold rounded-lg transition shadow-sm text-sm">Lås spelet & Visa facit</button>
                         </div>
