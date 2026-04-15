@@ -106,11 +106,25 @@ async function loadDefaultPackages() {
     }
 }
 
+function packetFingerprint(b) {
+    if (!b || !Array.isArray(b.boards)) return '';
+    // Bygger en deterministisk strängrepresentation oberoende av nyckelordning,
+    // så att en lokal kopia och en Firestore-hämtad kopia jämförs likadant.
+    return JSON.stringify({
+        title: (b.title || '').trim(),
+        boards: b.boards.map(q => ({
+            answer: (q && q.answer ? String(q.answer) : '').trim(),
+            clues: Array.isArray(q && q.clues)
+                ? q.clues.map(c => (c == null ? '' : String(c)).trim())
+                : []
+        }))
+    });
+}
+
 function findIdenticalBoardIndex(candidate) {
-    if (!candidate || !candidate.boards) return -1;
-    const normalize = (b) => JSON.stringify({ title: b.title, boards: b.boards });
-    const candidateStr = normalize(candidate);
-    return boards.findIndex(b => normalize(b) === candidateStr);
+    const fp = packetFingerprint(candidate);
+    if (!fp) return -1;
+    return boards.findIndex(b => packetFingerprint(b) === fp);
 }
 
 async function checkSharedLink() {
