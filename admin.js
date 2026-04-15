@@ -106,24 +106,37 @@ async function loadDefaultPackages() {
     }
 }
 
+function findIdenticalBoardIndex(candidate) {
+    if (!candidate || !candidate.boards) return -1;
+    const normalize = (b) => JSON.stringify({ title: b.title, boards: b.boards });
+    const candidateStr = normalize(candidate);
+    return boards.findIndex(b => normalize(b) === candidateStr);
+}
+
 async function checkSharedLink() {
     const urlParams = new URLSearchParams(window.location.search);
     const shareId = urlParams.get('share');
-    
+
     if (shareId) {
         window.showToast("Hämtar delat spelbräde...", "⏳");
         try {
             await authReady;
             const docRef = doc(db, "shared_boards", shareId);
             const docSnap = await getDoc(docRef);
-            
+
             if (docSnap.exists()) {
                 const sharedBoard = docSnap.data();
-                boards.push(sharedBoard);
-                saveBoards();
-                
-                window.showToast(`Spelbrädet "${sharedBoard.title}" har lagts till!`, "🎉");
-                window.setView('view', boards.length - 1);
+                const existingIndex = findIdenticalBoardIndex(sharedBoard);
+
+                if (existingIndex !== -1) {
+                    window.showToast(`Du har redan paketet "${sharedBoard.title}".`, "ℹ️");
+                    window.setView('view', existingIndex);
+                } else {
+                    boards.push(sharedBoard);
+                    saveBoards();
+                    window.showToast(`Spelbrädet "${sharedBoard.title}" har lagts till!`, "🎉");
+                    window.setView('view', boards.length - 1);
+                }
             } else {
                 window.showToast("Delningslänken är ogiltig eller har gått ut.", "❌");
             }
