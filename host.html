@@ -413,7 +413,7 @@
 
         function calculateFinalResults() {
             const activePlayers = playersData.filter(p => !p.banned);
-            return sessionData.teams.map(team => {
+            return sessionData.teams.filter(team => activePlayers.some(p => p.teamId === team.id)).map(team => {
                 const tPlayers = activePlayers.filter(p => p.teamId === team.id);
                 if(tPlayers.length === 0) return { ...team, score: 0, total: 0, players: [] };
                 
@@ -699,9 +699,9 @@
                     <div class="bg-slate-50 p-6 rounded-xl border border-slate-300 shadow-sm">
                         <h3 class="text-lg font-black mb-4 text-slate-700">Status: Vilka har låst?</h3>
                         <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
-                            ${sessionData.teams.map(team => {
+                            ${sessionData.teams.filter(team => activePlayers.some(p => p.teamId === team.id)).map(team => {
                                 const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
-                                
+
                                 // Räkna bara förväntade svar om spelaren är online ELLER redan har låst
                                 const expectedPlayers = teamPlayers.filter(p => {
                                     const isOnline = (now - (p.lastActive || 0)) < 15000;
@@ -742,7 +742,7 @@
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                        ${sessionData.teams.map(team => {
+                        ${sessionData.teams.filter(team => activePlayers.some(p => p.teamId === team.id)).map(team => {
                             const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
                             return `
                                 <div class="bg-white p-3 rounded-xl border border-slate-200 shadow-sm">

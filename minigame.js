@@ -30,15 +30,18 @@ let isPlaying = false;
 
 function updateButtonUI() {
     const btn = document.getElementById('switchBtn');
-    if(btn) {
-        if (targetTrack === 'inner') {
-            btn.className = "w-full py-4 border-b-4 border-blue-700 bg-blue-500 hover:bg-blue-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none";
-            btn.innerText = "SPÅR: INRE (BLÅTT) 🔄";
-        } else {
-            btn.className = "w-full py-4 border-b-4 border-red-700 bg-red-500 hover:bg-red-400 text-white rounded-2xl font-black text-2xl active:scale-[0.98] transition-all shadow-lg focus:outline-none";
-            btn.innerText = "SPÅR: YTTRE (RÖTT) 🔀";
-        }
-    }
+    if(!btn) return;
+    const isInner = targetTrack === 'inner';
+    // Byt bara de färgklasser som faktiskt skiljer – undvik att skriva över
+    // hela className-strängen (orsakar onödig reflow på svagare Chromebooks).
+    btn.classList.toggle('border-blue-700', isInner);
+    btn.classList.toggle('bg-blue-500', isInner);
+    btn.classList.toggle('hover:bg-blue-400', isInner);
+    btn.classList.toggle('border-red-700', !isInner);
+    btn.classList.toggle('bg-red-500', !isInner);
+    btn.classList.toggle('hover:bg-red-400', !isInner);
+    const label = isInner ? "SPÅR: INRE (BLÅTT) 🔄" : "SPÅR: YTTRE (RÖTT) 🔀";
+    if (btn.textContent !== label) btn.textContent = label;
 }
 
 export function toggleSwitch() {
