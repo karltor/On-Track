@@ -107,8 +107,16 @@
             showToast("Kunde inte logga in. Prova vanlig flik (ej privat) eller annan webbläsare.", "❌");
             throw err;
         });
-        // När auth resolvar, rendera om så join-knappen aktiveras i lobbyn.
-        authReady.then(() => { if (sessionData) render(); }).catch(() => {});
+        // När auth resolvar - aktivera join-knappen *in place* istället för att
+        // re-rendera hela lobbyn. På iOS Safari river innerHTML-swap namninputen
+        // och tappar tangentbordsfokus, så eleven kan skriva utan att tecken syns.
+        authReady.then(() => {
+            const btn = document.getElementById('joinBtn');
+            if (btn && btn.disabled && btn.innerText === "Väntar på anslutning...") {
+                btn.disabled = false;
+                btn.innerText = "Gå med i spelet";
+            }
+        }).catch(() => {});
         onAuthStateChanged(auth, (user) => {
             if (user && sessionPin) startListeners();
         });
