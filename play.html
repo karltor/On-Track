@@ -331,19 +331,23 @@
             const unlockCount = existingAnswer.unlockCount || 0;
 
             btn.disabled = true; btn.innerText = "Låser...";
+            // Blur:a inputen så att egen-dokument-lyssnaren inte hoppar över render()
+            // (annars fastnar knappen på "Låser..." tills läraren triggar en session-snapshot)
+            document.getElementById('answerInput')?.blur();
             try {
                 await updateDoc(doc(db, "sessions", sessionPin, "players", playerId), {
-                    [`answers.${sessionData.currentBoardIndex}`]: { 
-                        text: answerText, 
-                        clueIndex: sessionData.currentClueIndex, 
-                        locked: true, 
-                        correct: null, 
-                        points: 0, 
+                    [`answers.${sessionData.currentBoardIndex}`]: {
+                        text: answerText,
+                        clueIndex: sessionData.currentClueIndex,
+                        locked: true,
+                        correct: null,
+                        points: 0,
                         status: null,
                         unlockCount: unlockCount
                     }
                 });
-            } catch (err) { 
+                render();
+            } catch (err) {
                 console.error("Fel vid låsning:", err);
                 showToast("Kunde inte låsa ditt svar.", "❌"); 
                 btn.disabled = false; btn.innerText = "Lås in mitt svar!"; 
