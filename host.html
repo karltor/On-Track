@@ -727,17 +727,12 @@
                             ${sessionData.teams.filter(team => activePlayers.some(p => p.teamId === team.id)).map(team => {
                                 const teamPlayers = activePlayers.filter(p => p.teamId === team.id);
 
-                                // Räkna bara förväntade svar om spelaren är online ELLER redan har låst
-                                const expectedPlayers = teamPlayers.filter(p => {
-                                    const isOnline = isPlayerOnline(p);
-                                    const hasLocked = p.answers?.[sessionData.currentBoardIndex]?.locked;
-                                    return isOnline || hasLocked;
-                                });
-
-                                const lockedCount = expectedPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
-                                const expectedCount = expectedPlayers.length;
+                                // Räkna alla lagmedlemmar i nämnaren så läraren ser t.ex. 0/3
+                                // direkt efter spelstart, även innan eleverna hunnit pinga tillbaka.
+                                const lockedCount = teamPlayers.filter(p => p.answers?.[sessionData.currentBoardIndex]?.locked).length;
+                                const expectedCount = teamPlayers.length;
                                 // TILLAGT: escapeHTML på hover-verktygstipset
-                                const missing = escapeHTML(expectedPlayers.filter(p => !p.answers?.[sessionData.currentBoardIndex]?.locked).map(p=>p.name).join(', '));
+                                const missing = escapeHTML(teamPlayers.filter(p => !p.answers?.[sessionData.currentBoardIndex]?.locked).map(p=>p.name).join(', '));
                                 
                                 const fillRatio = expectedCount ? (lockedCount / expectedCount) * 100 : 0;
                                 const isDone = lockedCount === expectedCount && expectedCount > 0;
