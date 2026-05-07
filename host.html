@@ -446,6 +446,87 @@
             if(playerId) changeTeam(playerId, teamId === 'null' ? null : teamId);
         };
 
+        // Touch-stöd för drag & drop (mobil). HTML5 drag-API funkar inte på touch.
+        (function setupTouchDnD() {
+            let dragPlayerId = null;
+            let ghost = null;
+            let lastDropZone = null;
+            let startX = 0, startY = 0;
+            let activated = false;
+            const ACTIVATE_PX = 6;
+
+            const findDropZone = (x, y) => {
+                const el = document.elementFromPoint(x, y);
+                if (!el) return null;
+                return el.closest('[ondrop]');
+            };
+
+            const clearHover = () => {
+                if (lastDropZone) lastDropZone.classList.remove('drag-over');
+                lastDropZone = null;
+            };
+
+            const cleanup = () => {
+                if (ghost && ghost.parentNode) ghost.parentNode.removeChild(ghost);
+                ghost = null;
+                clearHover();
+                dragPlayerId = null;
+                activated = false;
+            };
+
+            document.addEventListener('touchstart', (e) => {
+                const src = e.target.closest('[draggable="true"][ondragstart]');
+                if (!src) return;
+                // Ignorera om touchen startar på en knapp (ändra namn / kicka)
+                if (e.target.closest('button')) return;
+                const m = src.getAttribute('ondragstart').match(/drag\(event,\s*'([^']+)'\)/);
+                if (!m) return;
+                dragPlayerId = m[1];
+                const t = e.touches[0];
+                startX = t.clientX; startY = t.clientY;
+                activated = false;
+            }, { passive: true });
+
+            document.addEventListener('touchmove', (e) => {
+                if (!dragPlayerId) return;
+                const t = e.touches[0];
+                if (!activated) {
+                    if (Math.abs(t.clientX - startX) < ACTIVATE_PX && Math.abs(t.clientY - startY) < ACTIVATE_PX) return;
+                    activated = true;
+                    ghost = document.createElement('div');
+                    ghost.textContent = '👤';
+                    ghost.style.cssText = 'position:fixed;z-index:9999;pointer-events:none;background:#fff;border:2px solid #f59e0b;border-radius:8px;padding:6px 10px;font-weight:bold;box-shadow:0 4px 12px rgba(0,0,0,.2);font-size:14px;';
+                    document.body.appendChild(ghost);
+                }
+                e.preventDefault();
+                ghost.style.left = (t.clientX + 10) + 'px';
+                ghost.style.top = (t.clientY + 10) + 'px';
+                const zone = findDropZone(t.clientX, t.clientY);
+                if (zone !== lastDropZone) {
+                    clearHover();
+                    if (zone) { zone.classList.add('drag-over'); lastDropZone = zone; }
+                }
+            }, { passive: false });
+
+            document.addEventListener('touchend', (e) => {
+                if (!dragPlayerId) return;
+                if (activated) {
+                    const t = (e.changedTouches && e.changedTouches[0]) || null;
+                    const zone = t ? findDropZone(t.clientX, t.clientY) : null;
+                    if (zone) {
+                        const m = zone.getAttribute('ondrop').match(/drop\(event,\s*'([^']+)'\)/);
+                        if (m) {
+                            const teamId = m[1];
+                            changeTeam(dragPlayerId, teamId === 'null' ? null : teamId);
+                        }
+                    }
+                }
+                cleanup();
+            });
+
+            document.addEventListener('touchcancel', cleanup);
+        })();
+
         window.randomizeTeams = async () => {
             const teamSize = parseInt(document.getElementById('teamSize').value) || 3;
             const activePlayers = playersData.filter(p => !p.banned);
