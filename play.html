@@ -35,7 +35,7 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
-        import { getFirestore, doc, collection, onSnapshot, addDoc, updateDoc } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
+        import { getFirestore, doc, collection, onSnapshot, addDoc, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
         
         // Import Minigame logic
@@ -98,13 +98,47 @@
         let lastSeenPing = null;
 
         // --- FIREBASE SYNC ---
-        // Wait for anonymous auth before starting Firebase operations.
-        // iOS Safari (privatläge/ITP) kan låta signInAnonymously fela tyst - fånga
-        // så vi kan ge eleven ett begripligt felmeddelande i stället för att krascha
-        // senare när auth.currentUser läses i joinGame.
-        const authReady = signInAnonymously(auth).catch(err => {
-            console.error("Anonym inloggning misslyckades:", err);
-            showToast("Kunde inte logga in. Prova vanlig flik (ej privat) eller annan webbläsare.", "❌");
+        // Robust anonym auth med timeout & retry. På vissa iPhones (iOS Safari
+        // privatläge/ITP, äldre modeller, dålig täckning) kan signInAnonymously
+        // hänga tyst utan att rejecta. Utan timeout fastnar eleven på
+        // "Väntar på anslutning..." och måste ladda om sidan manuellt för att
+        // komma in.
+        async function ensureAuthWithRetry() {
+            const TIMEOUT_MS = 7000;
+            const MAX_ATTEMPTS = 3;
+            let lastErr = null;
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+                try {
+                    return await Promise.race([
+                        signInAnonymously(auth),
+                        new Promise((_, reject) => setTimeout(
+                            () => reject(new Error('auth-timeout')), TIMEOUT_MS))
+                    ]);
+                } catch (err) {
+                    lastErr = err;
+                    console.warn(`Anonym auth misslyckades (försök ${attempt}/${MAX_ATTEMPTS}):`, err);
+                    if (attempt < MAX_ATTEMPTS) {
+                        await new Promise(r => setTimeout(r, 600 * attempt));
+                    }
+                }
+            }
+            throw lastErr;
+        }
+
+        const authReady = ensureAuthWithRetry().catch(err => {
+            console.error("Anonym inloggning misslyckades efter alla försök:", err);
+            showToast("Kunde inte ansluta. Ladda om sidan eller prova annan webbläsare.", "❌");
+            // Render reload-prompt i stället för att lämna eleven på loading-spinner
+            const appEl = document.getElementById('app');
+            if (appEl && !sessionData) {
+                appEl.innerHTML = `
+                    <div class="text-center max-w-md mx-auto py-16">
+                        <h1 class="text-3xl font-black text-red-400 mb-4">Kunde inte ansluta</h1>
+                        <p class="text-slate-400 mb-6">Anslutningen tog för lång tid. Ladda om sidan för att försöka igen.</p>
+                        <button onclick="location.reload()" class="bg-amber-500 hover:bg-amber-400 text-slate-900 font-black text-lg py-3 px-6 rounded-xl shadow-lg">Ladda om sidan</button>
+                    </div>
+                `;
+            }
             throw err;
         });
         // När auth resolvar - aktivera join-knappen *in place* istället för att
@@ -251,26 +285,57 @@
             if (unsubOwnDoc) { unsubOwnDoc(); unsubOwnDoc = null; }
         }
 
-        function computeFinalResults() {
-            if(!playerData || !sessionData) return;
-            const myTeam = sessionData.teams?.find(t => t.id === playerData.teamId);
-            const teamMates = allPlayers.filter(p => p.teamId === myTeam?.id && !p.banned);
-            
-            const myTotalPoints = Object.values(playerData.answers || {}).reduce((sum, a) => sum + (a.points || 0), 0);
-            let teamTotal = 0, teamAvg = 0;
-            
-            if (teamMates.length > 0) {
-                teamTotal = teamMates.reduce((sum, p) => sum + Object.values(p.answers || {}).reduce((s, a) => s + (a.points || 0), 0), 0);
-                teamAvg = Math.round((teamTotal / teamMates.length) * 10) / 10;
+        let computingFinal = false;
+        async function computeFinalResults() {
+            if (computingFinal || finalResults) return;
+            if (!playerData || !sessionData) return;
+            computingFinal = true;
+            try {
+                // Tvinga server-läsning innan vi räknar slutresultatet. Collection-
+                // lyssnaren attachas för 'lobby', detachas under 'playing'/'revealing',
+                // och re-attachas vid 'finished'. När den re-attachas kan Firestore
+                // fyra första snapshoten från cache (lobby-data utan poäng), vilket
+                // ger fel lagsnitt jämfört med lärarens leaderboard. getDocs hämtar
+                // färska data direkt från servern (med cache som offline-fallback).
+                try {
+                    const fresh = await getDocs(collection(db, "sessions", sessionPin, "players"));
+                    const players = [];
+                    fresh.forEach(d => players.push({id: d.id, ...d.data()}));
+                    allPlayers = players;
+                    if (playerId) {
+                        const me = allPlayers.find(p => p.id === playerId);
+                        if (me) playerData = me;
+                    }
+                } catch (e) {
+                    console.warn("Kunde inte hämta färska slutresultat - använder cache:", e);
+                }
+
+                // Spegla värdens calculateFinalResults-logik exakt: bannade räknas
+                // varken in i totalpoäng eller divisor. Om eleven saknar lag ska
+                // ingen lagsnitt-summering göras (myTeam?.id === undefined hade
+                // matchat alla otilldelade spelare och gett vilseledande snitt).
+                const activePlayers = allPlayers.filter(p => !p.banned);
+                const myTeam = sessionData.teams?.find(t => t.id === playerData.teamId);
+                const teamMates = myTeam ? activePlayers.filter(p => p.teamId === myTeam.id) : [];
+
+                const myTotalPoints = Object.values(playerData.answers || {}).reduce((sum, a) => sum + (a.points || 0), 0);
+                let teamTotal = 0, teamAvg = 0;
+
+                if (teamMates.length > 0) {
+                    teamTotal = teamMates.reduce((sum, p) => sum + Object.values(p.answers || {}).reduce((s, a) => s + (a.points || 0), 0), 0);
+                    teamAvg = Math.round((teamTotal / teamMates.length) * 10) / 10;
+                }
+
+                finalResults = { myTotalPoints, teamTotal, teamAvg, myTeam };
+                render();
+
+                // Slutresultat är beräknat - lossa lyssnare så lärarens städnings-deletes
+                // inte debiterar oss fler reads. (Session-lyssnaren behövs inte heller mer.)
+                detachCollection();
+                detachOwnDoc();
+            } finally {
+                computingFinal = false;
             }
-
-            finalResults = { myTotalPoints, teamTotal, teamAvg, myTeam };
-            render();
-
-            // Slutresultat är beräknat - lossa lyssnare så lärarens städnings-deletes
-            // inte debiterar oss fler reads. (Session-lyssnaren behövs inte heller mer.)
-            detachCollection();
-            detachOwnDoc();
         }
 
         window.joinGame = async (e) => {
