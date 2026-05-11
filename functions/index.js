@@ -21,7 +21,6 @@ const MODELS = {
   "gemini-3.1-flash-lite":                 { label: "Gemini 3.1 Flash Lite",        style: "gemini" },
   "gemini-3.1-flash-lite-preview":         { label: "Gemini 3.1 Flash Lite Preview", style: "gemini" },
   "gemini-2.5-flash-lite":                 { label: "Gemini 2.5 Flash Lite",        style: "gemini" },
-  "gemini-2.5-flash-lite-preview-09-2025": { label: "Gemini 2.5 Flash Lite (Sep 2025)", style: "gemini" },
 };
 const ALL_MODELS = Object.keys(MODELS);
 
@@ -36,13 +35,12 @@ const MONTHLY_BUDGET_SEK = { anon: 30, staff: 50 };
 // Verified against https://ai.google.dev/gemini-api/docs/pricing#standard
 // USD per 1 000 000 tokens. Tune if Google changes prices.
 const PRICING_USD_PER_M = {
-  "gemini-3-flash-preview":                { in: 0.30, out: 2.50 },
-  "gemini-3.1-flash-lite":                 { in: 0.10, out: 0.40 },
-  "gemini-3.1-flash-lite-preview":         { in: 0.10, out: 0.40 },
+  "gemini-3-flash-preview":                { in: 0.50, out: 3.00 },
+  "gemini-3.1-flash-lite":                 { in: 0.25, out: 1.50 },
+  "gemini-3.1-flash-lite-preview":         { in: 0.25, out: 1.50 },
   "gemini-2.5-flash-lite":                 { in: 0.10, out: 0.40 },
-  "gemini-2.5-flash-lite-preview-09-2025": { in: 0.10, out: 0.40 },
 };
-const SEK_PER_USD = 10.5;
+const SEK_PER_USD = 9.5;
 
 // A single model call is abandoned after this long.
 const CALL_TIMEOUT_MS = 70000;
