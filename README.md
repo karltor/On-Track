@@ -7,16 +7,17 @@ AI-brädesgenereringen går via en Firebase Cloud Function (`functions/index.js`
 callable `generateBoard`, region `europe-west1`). Funktionen håller Gemini/Gemma
 API-nyckeln, så klienten ser den aldrig, och den enforcar dagsgränser:
 
-- Gäst (anonym Firestore-auth): max **50** genereringar/dag per användare, endast
-  Gemma-modeller (Gemma 3 27B/12B + Gemma 4 31B/26B).
-- Globala gäst-tak per dygn (UTC): **10 000** Gemma 3-anrop, **1 000** Gemma 4 26B-anrop,
-  **5 000** Gemma 4 31B-anrop. Tak per modell justeras i `GLOBAL_CAPS` i `functions/index.js`.
-- Inloggad Nya Munken-personal (`@nyamunken.se`): premium-AI (även Gemini-modellerna),
-  hög skyddsgräns på **500**/dag, räknas inte mot gäst-taken.
+- Gäst (anonym Firestore-auth): max **50** genereringar/dag per användare. Modeller:
+  Gemma 4 31B, Gemma 4 26B (a4b), samt Gemini 3.1 Flash Lite med en egen kvot på
+  **10/dag per gäst**.
+- Globala gäst-tak per dygn (UTC): **300** Flash 3.1 Lite-anrop, **1 000** Gemma 4 26B-anrop,
+  **5 000** Gemma 4 31B-anrop. Justeras i `GLOBAL_CAPS` / `ANON_MODEL_PER_USER` i `functions/index.js`.
+- Inloggad Nya Munken-personal (`@nyamunken.se`): full premium-AI (även Gemini 3 Flash
+  och 2.5 Flash, ingen Flash-Lite-kvot), hög skyddsgräns på **500**/dag, räknas inte mot gäst-taken.
 
-> Obs: de exakta API-id:na för "Gemma 4 31B/26B" är platshållare i `functions/index.js`
-> (`GEMMA4_31B` / `GEMMA4_26B`). Uppdatera dem till riktiga `models/...`-id när de
-> bekräftats. Felaktigt id => modellen 404:ar och hoppas tyst över i racet.
+> Obs: Gemma 3 (`gemma-3-*-it`) finns inte längre på Gemini-API:t — kvar är bara Gemma 4.
+> Vilka modeller en nyckel har tillgång till syns via `.../v1beta/models`-endpointen.
+> Ett felaktigt modell-id => 404 och modellen hoppas tyst över i racet.
 
 ### Steg-för-steg: så här deployar du (för nybörjare)
 
@@ -71,7 +72,7 @@ Det tar någon minut. När det står "Deploy complete!" är AI-proxyn live.
 **5. Testa**
 
 Öppna appen. Utan att logga in: klicka "✨ Generera med AI" → du ska kunna generera som
-gäst (Gemma-modeller, max 50/dag). Klicka "💼 Nya Munken-personal: logga in" → efter
+gäst (max 50/dag). Klicka "💼 Nya Munken-personal: logga in" → efter
 inloggning med din `@nyamunken.se`-adress får du även Gemini-modellerna (stjärnmärkta).
 
 **6. Städa upp (valfritt)**
@@ -79,12 +80,20 @@ inloggning med din `@nyamunken.se`-adress får du även Gemini-modellerna (stjä
 När allt funkar kan du ta bort det gamla `secrets/gemini`-dokumentet i Firestore — det
 går ändå inte längre att läsa från klienten (`firestore.rules` blockerar det nu).
 
-### Lokalt utan att deploya (valfritt)
+### Automatisk deploy av funktionen (GitHub Actions)
 
-```sh
-firebase emulators:start --only functions,firestore,auth
-```
-(Då behöver du även peka klienten mot emulatorn — utanför ramen för den här guiden.)
+Att pusha till GitHub uppdaterar bara hemsidan (GitHub Pages). Cloud Function:en
+deployas inte automatiskt — om inte du sätter upp detta engångssteg:
+
+1. I Cloud Shell (eller var som helst med Firebase CLI): kör `firebase login:ci`
+   och kopiera token-strängen den skriver ut.
+2. På GitHub: repo → **Settings → Secrets and variables → Actions → New repository
+   secret**. Namn: `FIREBASE_TOKEN`, värde: token-strängen.
+
+Klart. Workflowen `.github/workflows/deploy-functions.yml` kör då
+`firebase deploy --only functions,firestore:rules` automatiskt vid varje push till
+`main` som rör `functions/` eller `firestore.rules`. Du kan också trigga den manuellt
+under fliken **Actions → Deploy Cloud Functions → Run workflow**.
 
 Firestore-collections som funktionen använder: `ai_usage/{uid}` (per-användare/dag)
 och `ai_global/{YYYY-MM-DD}` (globala räknare). Klienter kan inte skriva till dem

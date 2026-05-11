@@ -89,7 +89,7 @@ function fillAccessBanner(id, tier) {
         el.innerHTML = `<span>✅ Inloggad som lärare – premium-AI (Gemini-modeller) aktiv.</span><button onclick="signOutToGuest()" class="font-bold underline hover:no-underline shrink-0">Logga ut</button>`;
     } else {
         el.className = "text-xs rounded-lg p-3 mb-4 bg-indigo-50 border border-indigo-200 text-indigo-800 flex items-center justify-between gap-3";
-        el.innerHTML = `<span>💼 Du genererar som gäst (max 50/dag, Gemma-modeller). Jobbar du på Nya Munken?</span><button onclick="signInAsStaff()" class="shrink-0 font-bold bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-500 transition">Logga in för premium-AI</button>`;
+        el.innerHTML = `<span>💼 Du genererar som gäst (max 50 AI-bräden per dag). Jobbar du på Nya Munken?</span><button onclick="signInAsStaff()" class="shrink-0 font-bold bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-500 transition">Logga in för full premium-AI</button>`;
     }
 }
 
@@ -134,8 +134,8 @@ function setAiLoadingText(loadingElId, tier) {
     const p = document.querySelector(`#${loadingElId} p`);
     if (!p) return;
     p.textContent = tier === 'staff'
-        ? 'AI:n tänker (premium-modeller, ca 10–15 sekunder)...'
-        : 'AI:n tänker (Gemma-modeller – det första förslaget kan dröja upp till en minut)...';
+        ? 'AI:n tänker (ca 10–15 sekunder)...'
+        : 'AI:n tänker (det första förslaget kan dröja upp till en minut)...';
 }
 
 window.generateAiBoard = async () => {

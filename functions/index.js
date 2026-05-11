@@ -15,30 +15,37 @@ const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // ---------------------------------------------------------------------------
 // Model catalogue
 // ---------------------------------------------------------------------------
-// Gemma 4 model ids per https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api
-// If an id is wrong the request 404s and that model is silently dropped from the
-// race, so the app keeps working with the remaining models.
+// Available models depend on what the API key has access to (call the
+// `.../v1beta/models` endpoint to check). As of 2026 the Gemma 3 *-it models are
+// gone from the Gemini API — only Gemma 4 (31B / 26B-a4b) remain.
 const GEMMA4_31B = "gemma-4-31b-it";
 const GEMMA4_26B = "gemma-4-26b-a4b-it";
+const FLASH_LITE = "gemini-3.1-flash-lite-preview";
 
 const MODELS = {
-  "gemini-3-flash-preview":        { label: "Flash 3 Preview", style: "gemini", premium: true },
-  "gemini-3.1-flash-lite-preview": { label: "Flash 3.1 Lite",  style: "gemini", premium: true },
-  "gemini-2.5-flash":              { label: "Flash 2.5",       style: "gemini", premium: true },
-  "gemma-3-27b-it":                { label: "Gemma 3 (27B)",   style: "gemma",  bucket: "gemma3" },
-  "gemma-3-12b-it":                { label: "Gemma 3 (12B)",   style: "gemma",  bucket: "gemma3" },
-  [GEMMA4_31B]:                    { label: "Gemma 4 (31B)",   style: "gemma4", bucket: "gemma4-31b" },
-  [GEMMA4_26B]:                    { label: "Gemma 4 (26B)",   style: "gemma4", bucket: "gemma4-26b" },
+  "gemini-3-flash-preview": { label: "Flash 3 Preview", style: "gemini", premium: true },
+  [FLASH_LITE]:             { label: "Flash 3.1 Lite",  style: "gemini", premium: true, bucket: "flashlite" },
+  "gemini-2.5-flash":       { label: "Flash 2.5",       style: "gemini", premium: true },
+  [GEMMA4_31B]:             { label: "Gemma 4 (31B)",   style: "gemma4", bucket: "gemma4-31b" },
+  [GEMMA4_26B]:             { label: "Gemma 4 (26B)",   style: "gemma4", bucket: "gemma4-26b" },
 };
 
+// Models guests (anonymous) may use. Gemma 4 + a small ration of Flash 3.1 Lite.
+const ANON_MODELS = [FLASH_LITE, GEMMA4_31B, GEMMA4_26B];
 const STAFF_MODELS = Object.keys(MODELS);
-const ANON_MODELS = Object.keys(MODELS).filter((m) => MODELS[m].style !== "gemini");
 
-// Daily caps
+// Daily caps on the total number of generations a single user may trigger.
 const USER_DAILY = { staff: 500, anon: 50 };
-// Global per-bucket caps that only apply to anonymous (guest) traffic.
+
+// Extra per-model caps for guests only:
+//  - perUser: how many times one guest may use this model per day (within USER_DAILY).
+const ANON_MODEL_PER_USER = {
+  [FLASH_LITE]: 10,
+};
+// Global per-bucket caps per day (UTC), guests only. A model with no bucket here
+// has no global cap.
 const GLOBAL_CAPS = {
-  gemma3: 10000,
+  flashlite: 300,
   "gemma4-31b": 5000,
   "gemma4-26b": 1000,
 };
@@ -107,9 +114,10 @@ async function callRaw(modelName, body, apiKey, attempt = 0) {
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    // Free-tier rate limits (429) are common when firing several Gemma models at
-    // once — back off briefly and retry a couple of times before giving up.
-    if (res.status === 429 && attempt < 2) {
+    // Free-tier rate limits (429) and transient server errors (5xx) are common
+    // when firing several Gemma models at once — back off and retry a couple of
+    // times before giving up.
+    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
       await sleep(2500 * (attempt + 1) + Math.random() * 1000);
       return callRaw(modelName, body, apiKey, attempt + 1);
     }
@@ -220,6 +228,7 @@ export const generateBoard = onCall(
       const u = userSnap.exists ? userSnap.data() : {};
       const sameDay = u.date === day;
       const used = sameDay ? u.count || 0 : 0;
+      const userModels = sameDay && u.models && typeof u.models === "object" ? u.models : {};
       if (used >= USER_DAILY[tier]) {
         throw new HttpsError(
           "resource-exhausted",
@@ -229,13 +238,16 @@ export const generateBoard = onCall(
         );
       }
 
-      // Filter out globally-exhausted buckets (anon only).
       if (tier === "anon") {
         const g = globalSnap.exists ? globalSnap.data() : {};
         allowedModels = candidates.filter((m) => {
           const bucket = MODELS[m].bucket;
-          if (!bucket || GLOBAL_CAPS[bucket] == null) return true;
-          return (g[bucket] || 0) < GLOBAL_CAPS[bucket];
+          // Global per-bucket cap.
+          if (bucket && GLOBAL_CAPS[bucket] != null && (g[bucket] || 0) >= GLOBAL_CAPS[bucket]) return false;
+          // Per-guest per-model cap.
+          const perUserCap = ANON_MODEL_PER_USER[m];
+          if (perUserCap != null && (userModels[m] || 0) >= perUserCap) return false;
+          return true;
         });
         if (allowedModels.length === 0) {
           throw new HttpsError("resource-exhausted", "GLOBAL_LIMIT");
@@ -245,17 +257,18 @@ export const generateBoard = onCall(
       }
 
       // Reserve usage now (conservative: count attempts, don't refund failures).
-      tx.set(userRef, { date: day, count: used + 1 }, { merge: true });
+      // Full overwrite (no merge) so yesterday's per-model counts don't leak in.
+      const newModels = { ...userModels };
+      for (const m of allowedModels) newModels[m] = (newModels[m] || 0) + 1;
+      tx.set(userRef, { date: day, count: used + 1, models: newModels });
 
       if (tier === "anon") {
-        const incPerBucket = {};
-        for (const m of allowedModels) {
-          const b = MODELS[m].bucket;
-          if (b && GLOBAL_CAPS[b] != null) incPerBucket[b] = (incPerBucket[b] || 0) + 1;
-        }
         const g = globalSnap.exists ? globalSnap.data() : {};
         const update = { date: day };
-        for (const [b, inc] of Object.entries(incPerBucket)) update[b] = (g[b] || 0) + inc;
+        for (const m of allowedModels) {
+          const b = MODELS[m].bucket;
+          if (b && GLOBAL_CAPS[b] != null) update[b] = (update[b] != null ? update[b] : (g[b] || 0)) + 1;
+        }
         tx.set(globalRef, update, { merge: true });
       }
     });
