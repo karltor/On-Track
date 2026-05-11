@@ -107,9 +107,10 @@ async function callRaw(modelName, body, apiKey, attempt = 0) {
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    // Free-tier rate limits (429) are common when firing several Gemma models at
-    // once — back off briefly and retry a couple of times before giving up.
-    if (res.status === 429 && attempt < 2) {
+    // Free-tier rate limits (429) and transient server errors (5xx) are common
+    // when firing several Gemma models at once — back off and retry a couple of
+    // times before giving up.
+    if ((res.status === 429 || res.status >= 500) && attempt < 2) {
       await sleep(2500 * (attempt + 1) + Math.random() * 1000);
       return callRaw(modelName, body, apiKey, attempt + 1);
     }
