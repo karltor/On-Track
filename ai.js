@@ -130,6 +130,14 @@ window.closeAiModal = () => {
     }, 200);
 };
 
+function setAiLoadingText(loadingElId, tier) {
+    const p = document.querySelector(`#${loadingElId} p`);
+    if (!p) return;
+    p.textContent = tier === 'staff'
+        ? 'AI:n tänker (premium-modeller, ca 10–15 sekunder)...'
+        : 'AI:n tänker (Gemma-modeller – det första förslaget kan dröja upp till en minut)...';
+}
+
 window.generateAiBoard = async () => {
     const promptText = document.getElementById('aiPrompt').value.trim();
     if (!promptText) return window.showToast("Skriv in ett tema först!", "⚠️");
@@ -139,7 +147,8 @@ window.generateAiBoard = async () => {
     document.getElementById('aiLoading').classList.add('flex');
 
     try {
-        await ensureAiSignedIn();
+        const tier = await ensureAiSignedIn();
+        setAiLoadingText('aiLoading', tier);
         const systemPrompt = `Du är en expert på att skapa engagerande och språkligt rika frågesporter för skolelever, exakt i samma anda som TV-programmet 'På Spåret'.
 
 Krav:
@@ -226,7 +235,8 @@ window.submitAiEdit = async () => {
     document.getElementById('aiEditLoading').classList.add('flex');
 
     try {
-        await ensureAiSignedIn();
+        const tier = await ensureAiSignedIn();
+        setAiLoadingText('aiEditLoading', tier);
         const systemPrompt = `Du är en expert på att skapa engagerande och språkligt rika frågesporter för skolelever, exakt i samma anda som TV-programmet 'På Spåret'.
 Din uppgift är att skriva om, förbättra eller modifiera ett existerande quiz-paket baserat på användarens direkta feedback.
 
@@ -273,7 +283,9 @@ function mapAiError(e) {
 function handleIncomingDraft(draft) {
     if (!draft || !draft.board) return false;
     const isFirst = window.aiDrafts.length === 0;
-    window.aiDrafts.push({ board: draft.board, info: draft.info || {} });
+    const info = draft.info || {};
+    console.log(`[AI] ✅ utkast klart från: ${info.id || '?'} (${info.model || '?'})${info.premium ? ' ⭐' : ''}`);
+    window.aiDrafts.push({ board: draft.board, info: info });
     if (isFirst) {
         try {
             applyAiBoard(JSON.parse(JSON.stringify(draft.board)));
@@ -314,9 +326,15 @@ function runAiGeneration(mode, systemPrompt, userText, isEditMode) {
                 return failWith(e);
             }
 
+            let gotChunks = false;
             try {
                 for await (const chunk of streamResult.stream) {
                     if (!isCurrent()) return;
+                    gotChunks = true;
+                    if (chunk && chunk.error) {
+                        console.warn(`[AI] ❌ modell misslyckades: ${chunk.error.model} – ${chunk.error.message}`);
+                        continue;
+                    }
                     if (handleIncomingDraft(chunk && chunk.draft)) succeed();
                 }
             } catch (_) {
@@ -338,6 +356,10 @@ function runAiGeneration(mode, systemPrompt, userText, isEditMode) {
                     if (handleIncomingDraft(d)) succeed();
                 }
             }
+            if (!gotChunks && data && Array.isArray(data.errors) && data.errors.length) {
+                data.errors.forEach(er => console.warn(`[AI] ❌ modell misslyckades: ${er.model} – ${er.message}`));
+            }
+            console.log(`[AI] klart – ${window.aiDrafts.length} förslag, ${(data && data.errors && data.errors.length) || 0} misslyckade modeller.`);
 
             if (window.aiDrafts.length === 0) {
                 return failWith(new Error("AI:n kunde inte skapa något bräde. Försök igen."));
