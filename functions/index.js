@@ -175,8 +175,8 @@ async function generateWithModel(modelName, systemInstruction, userText, apiKey)
 // Callable
 // ---------------------------------------------------------------------------
 export const generateBoard = onCall(
-  { region: REGION, secrets: [GEMINI_API_KEY], timeoutSeconds: 120, memory: "256MiB" },
-  async (request) => {
+  { region: REGION, secrets: [GEMINI_API_KEY], timeoutSeconds: 540, memory: "256MiB" },
+  async (request, response) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Du måste vara inloggad (eller anonym).");
     }
@@ -249,29 +249,32 @@ export const generateBoard = onCall(
       }
     });
 
-    // --- Fan out to the allowed models ---
+    // --- Fan out to the allowed models, streaming each result as it lands ---
     const apiKey = GEMINI_API_KEY.value();
-    const results = await Promise.allSettled(
-      allowedModels.map((m) => generateWithModel(m, systemPrompt, userText, apiKey))
-    );
-
     const drafts = [];
-    results.forEach((r, i) => {
-      const modelName = allowedModels[i];
-      if (r.status === "fulfilled") {
-        drafts.push({
-          board: r.value,
-          info: {
-            id: MODELS[modelName].label,
-            model: modelName,
-            style: MODELS[modelName].style,
-            premium: !!MODELS[modelName].premium,
-          },
-        });
-      } else {
-        console.warn(`Model ${modelName} failed:`, r.reason?.message || r.reason);
-      }
-    });
+    await Promise.allSettled(
+      allowedModels.map(async (modelName) => {
+        try {
+          const board = await generateWithModel(modelName, systemPrompt, userText, apiKey);
+          const draft = {
+            board,
+            info: {
+              id: MODELS[modelName].label,
+              model: modelName,
+              style: MODELS[modelName].style,
+              premium: !!MODELS[modelName].premium,
+            },
+          };
+          drafts.push(draft);
+          // Emit immediately so the client can render the first model to finish.
+          if (response && typeof response.sendChunk === "function") {
+            response.sendChunk({ draft });
+          }
+        } catch (err) {
+          console.warn(`Model ${modelName} failed:`, err?.message || err);
+        }
+      })
+    );
 
     if (drafts.length === 0) {
       throw new HttpsError("internal", "Alla AI-anrop misslyckades. Försök igen om en stund.");

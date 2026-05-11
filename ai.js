@@ -267,42 +267,84 @@ function mapAiError(e) {
     return msg || "Något gick fel med AI-anropet. Servern kan vara överbelastad.";
 }
 
-async function runAiGeneration(mode, systemPrompt, userText, isEditMode) {
+// Tar emot ett färdigt AI-utkast. Det FÖRSTA som kommer in ritas ut direkt;
+// efterföljande utkast dyker upp som val i draft-väljaren. Returnerar true om
+// detta var det första (= dags att stänga modalen).
+function handleIncomingDraft(draft) {
+    if (!draft || !draft.board) return false;
+    const isFirst = window.aiDrafts.length === 0;
+    window.aiDrafts.push({ board: draft.board, info: draft.info || {} });
+    if (isFirst) {
+        try {
+            applyAiBoard(JSON.parse(JSON.stringify(draft.board)));
+        } catch (renderError) {
+            console.error("Krasch vid utritning av AI-data:", renderError);
+            window.aiDrafts.pop();
+            return false;
+        }
+        return true;
+    }
+    if (typeof window.renderDraftSelector === 'function') window.renderDraftSelector();
+    return false;
+}
+
+function runAiGeneration(mode, systemPrompt, userText, isEditMode) {
     window.aiDrafts = [];
     window.activeDraftIndex = 0;
     window.isAiEditMode = isEditMode;
-
     window.currentAiGenId = Date.now();
     const myGenId = window.currentAiGenId;
+    const isCurrent = () => window.currentAiGenId === myGenId;
 
-    let res;
-    try {
-        res = await generateBoardFn({ mode, systemPrompt, userText });
-    } catch (e) {
-        throw new Error(mapAiError(e));
-    }
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const succeed = () => { if (!settled) { settled = true; resolve(); } };
+        const failWith = (e) => {
+            if (settled) return;
+            settled = true;
+            reject(e instanceof Error ? e : new Error(mapAiError(e)));
+        };
 
-    // Användaren kan ha avbrutit/valt något medan vi väntade.
-    if (window.currentAiGenId !== myGenId) return;
+        (async () => {
+            let streamResult;
+            try {
+                // Streamande callable: får utkasten ett i taget allt eftersom modellerna blir klara.
+                streamResult = await generateBoardFn.stream({ mode, systemPrompt, userText });
+            } catch (e) {
+                return failWith(e);
+            }
 
-    const drafts = (res && res.data && Array.isArray(res.data.drafts)) ? res.data.drafts : [];
-    if (drafts.length === 0) throw new Error("AI:n kunde inte skapa något bräde. Försök igen.");
+            try {
+                for await (const chunk of streamResult.stream) {
+                    if (!isCurrent()) return;
+                    if (handleIncomingDraft(chunk && chunk.draft)) succeed();
+                }
+            } catch (_) {
+                // Streaming kanske inte stöds i denna miljö – vi faller tillbaka på .data nedan.
+            }
 
-    drafts.forEach(d => {
-        if (d && d.board) window.aiDrafts.push({ board: d.board, info: d.info || {} });
+            let data;
+            try {
+                data = await streamResult.data;
+            } catch (e) {
+                return failWith(e);
+            }
+            if (!isCurrent()) return;
+
+            // Fallback: om inga chunks kom in, använd den fullständiga payloaden.
+            if (window.aiDrafts.length === 0) {
+                const drafts = (data && Array.isArray(data.drafts)) ? data.drafts : [];
+                for (const d of drafts) {
+                    if (handleIncomingDraft(d)) succeed();
+                }
+            }
+
+            if (window.aiDrafts.length === 0) {
+                return failWith(new Error("AI:n kunde inte skapa något bräde. Försök igen."));
+            }
+            succeed(); // säkerhetsnät om handleIncomingDraft aldrig hann anropa succeed()
+        })();
     });
-    if (window.aiDrafts.length === 0) throw new Error("AI-svaret kunde inte tolkas. Försök igen.");
-
-    try {
-        applyAiBoard(JSON.parse(JSON.stringify(window.aiDrafts[0].board)));
-    } catch (renderError) {
-        console.error("Krasch vid utritning av AI-data:", renderError);
-        throw new Error("Kunde inte rita ut AI-brädet.");
-    }
-
-    if (window.aiDrafts.length > 1 && typeof window.renderDraftSelector === 'function') {
-        window.renderDraftSelector();
-    }
 }
 
 // ==========================================
