@@ -46,8 +46,9 @@
     <div id="aiModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-50 backdrop-blur-sm opacity-0 transition-opacity duration-200">
         <div class="bg-white p-8 rounded-3xl max-w-lg w-full shadow-2xl transform scale-95 transition-transform duration-200" id="aiModalContent">
             <h3 class="text-2xl font-black mb-2 flex items-center gap-2">✨ Skapa bräde med AI</h3>
-            <p class="text-slate-500 mb-6 text-sm">Beskriv vad du vill att paketet ska handla om. AI:n skapar 5 frågor med 5 ledtrådar vardera.</p>
-            
+            <p class="text-slate-500 mb-4 text-sm">Beskriv vad du vill att paketet ska handla om. AI:n skapar 5 frågor med 5 ledtrådar vardera.</p>
+            <div id="aiAccessBanner"></div>
+
             <textarea id="aiPrompt" class="w-full h-32 bg-slate-50 border border-slate-200 rounded-lg p-4 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent mb-4 resize-none" placeholder="T.ex. 'Europas huvudstäder', '90-tals musik' eller 'Svensk stormaktstid'..."></textarea>
             
             <div id="aiLoading" class="hidden flex-col items-center justify-center py-4 mb-4">
@@ -65,8 +66,9 @@
     <div id="aiEditModal" class="fixed inset-0 bg-slate-900/60 hidden items-center justify-center z-50 backdrop-blur-sm opacity-0 transition-opacity duration-200">
         <div class="bg-white p-8 rounded-3xl max-w-lg w-full shadow-2xl transform scale-95 transition-transform duration-200" id="aiEditModalContent">
             <h3 class="text-2xl font-black mb-2 flex items-center gap-2">🛠️ Redigera med AI</h3>
-            <p class="text-slate-500 mb-6 text-sm">Vad vill du ändra i detta paket? Skriv dina instruktioner så fixar AI:n resten.</p>
-            
+            <p class="text-slate-500 mb-4 text-sm">Vad vill du ändra i detta paket? Skriv dina instruktioner så fixar AI:n resten.</p>
+            <div id="aiEditAccessBanner"></div>
+
             <textarea id="aiEditPrompt" class="w-full h-32 bg-slate-50 border border-slate-200 rounded-lg p-4 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent mb-4 resize-none" placeholder="T.ex. 'Gör ledtrådarna till fråga 2 mycket svårare' eller 'Byt ut sista frågan mot en fråga om Roms fall'..."></textarea>
             
             <div id="aiEditLoading" class="hidden flex-col items-center justify-center py-4 mb-4">
@@ -98,6 +100,13 @@
 
     <main class="flex-1 flex flex-col relative bg-slate-50/50">
         <header class="h-20 border-b border-slate-200 bg-white/80 backdrop-blur px-8 flex items-center justify-end gap-3 sticky top-0 z-10">
+            <button id="staffLoginChip" onclick="signInAsStaff()" class="px-3 py-2 text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded-md transition-colors flex items-center gap-2 border border-indigo-200">
+                💼 Nya Munken-personal: logga in
+            </button>
+            <span id="staffStatusChip" class="hidden px-3 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 rounded-md border border-emerald-200 flex items-center gap-2">
+                ✅ Inloggad som lärare
+                <button onclick="signOutToGuest()" class="font-bold underline hover:no-underline">Logga ut</button>
+            </span>
             <button onclick="openAiModal()" class="px-4 py-2 text-sm font-semibold text-slate-800 bg-gradient-to-r from-amber-200 to-amber-400 hover:from-amber-300 hover:to-amber-500 rounded-md transition-colors flex items-center gap-2 shadow-sm border border-amber-300">
                 ✨ Generera med AI
             </button>

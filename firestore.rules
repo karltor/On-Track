@@ -19,10 +19,22 @@ service cloud.firestore {
              request.auth.uid == get(/databases/$(database)/documents/sessions/$(pin)).data.creatorUid;
     }
 
-    // Hemligheter (t.ex. API-nycklar). Endast inloggade lärare kan läsa.
+    // Hemligheter (t.ex. API-nycklar). API-nyckeln bor numera i Cloud Function-
+    // hemligheten (GEMINI_API_KEY) – klienter ska aldrig läsa den.
     match /secrets/{secretId} {
-      allow read: if isTeacher();
-      allow write: if false; // Endast du kan redigera detta via Firebase Console
+      allow read, write: if false;
+    }
+
+    // AI-användning per användare (gäst-kvot). Skrivs bara av Cloud Function
+    // (Admin SDK kringgår dessa regler). Användaren får läsa sin egen rad.
+    match /ai_usage/{uid} {
+      allow read: if isAuthenticated() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Globala dagsräknare för gäst-trafik. Endast Cloud Function rör dessa.
+    match /ai_global/{day} {
+      allow read, write: if false;
     }
 
     // Shared boards: public read, authenticated create, no edits/deletes
