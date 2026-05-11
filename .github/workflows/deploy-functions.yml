@@ -1,0 +1,36 @@
+name: Deploy Cloud Functions
+
+# Auto-deploys the Firebase Cloud Function (and Firestore rules) whenever the
+# backend changes on main. Requires a repo secret FIREBASE_TOKEN — generate it
+# once with `firebase login:ci` and add it under
+# Settings → Secrets and variables → Actions.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'functions/**'
+      - 'firestore.rules'
+      - '.github/workflows/deploy-functions.yml'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install function dependencies
+        working-directory: functions
+        run: npm ci
+
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      - name: Deploy functions + Firestore rules
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+        run: firebase deploy --only functions,firestore:rules --project on-track-d77d0 --non-interactive --force

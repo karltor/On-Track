@@ -79,12 +79,20 @@ inloggning med din `@nyamunken.se`-adress får du även Gemini-modellerna (stjä
 När allt funkar kan du ta bort det gamla `secrets/gemini`-dokumentet i Firestore — det
 går ändå inte längre att läsa från klienten (`firestore.rules` blockerar det nu).
 
-### Lokalt utan att deploya (valfritt)
+### Automatisk deploy av funktionen (GitHub Actions)
 
-```sh
-firebase emulators:start --only functions,firestore,auth
-```
-(Då behöver du även peka klienten mot emulatorn — utanför ramen för den här guiden.)
+Att pusha till GitHub uppdaterar bara hemsidan (GitHub Pages). Cloud Function:en
+deployas inte automatiskt — om inte du sätter upp detta engångssteg:
+
+1. I Cloud Shell (eller var som helst med Firebase CLI): kör `firebase login:ci`
+   och kopiera token-strängen den skriver ut.
+2. På GitHub: repo → **Settings → Secrets and variables → Actions → New repository
+   secret**. Namn: `FIREBASE_TOKEN`, värde: token-strängen.
+
+Klart. Workflowen `.github/workflows/deploy-functions.yml` kör då
+`firebase deploy --only functions,firestore:rules` automatiskt vid varje push till
+`main` som rör `functions/` eller `firestore.rules`. Du kan också trigga den manuellt
+under fliken **Actions → Deploy Cloud Functions → Run workflow**.
 
 Firestore-collections som funktionen använder: `ai_usage/{uid}` (per-användare/dag)
 och `ai_global/{YYYY-MM-DD}` (globala räknare). Klienter kan inte skriva till dem
