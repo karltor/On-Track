@@ -17,38 +17,63 @@ const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // ---------------------------------------------------------------------------
 // Available models depend on what the API key has access to (call the
 // `.../v1beta/models` endpoint to check). As of 2026 the Gemma 3 *-it models are
-// gone from the Gemini API — only Gemma 4 (31B / 26B-a4b) remain.
+// gone from the Gemini API — only Gemma 4 (31B / 26B-a4b) remain, and those are
+// SLOW (extended thinking), so they're treated as bonus alternatives that the
+// per-call timeout below will drop if they don't finish quickly.
 const GEMMA4_31B = "gemma-4-31b-it";
 const GEMMA4_26B = "gemma-4-26b-a4b-it";
-const FLASH_LITE = "gemini-3.1-flash-lite-preview";
+const FLASH_LITE_31 = "gemini-3.1-flash-lite-preview";
 
 const MODELS = {
-  "gemini-3-flash-preview": { label: "Flash 3 Preview", style: "gemini", premium: true },
-  [FLASH_LITE]:             { label: "Flash 3.1 Lite",  style: "gemini", premium: true, bucket: "flashlite" },
-  "gemini-2.5-flash":       { label: "Flash 2.5",       style: "gemini", premium: true },
-  [GEMMA4_31B]:             { label: "Gemma 4 (31B)",   style: "gemma4", bucket: "gemma4-31b" },
-  [GEMMA4_26B]:             { label: "Gemma 4 (26B)",   style: "gemma4", bucket: "gemma4-26b" },
+  // Premium tier — newest/best, staff only, no daily caps.
+  "gemini-3-flash-preview":     { label: "Gemini 3 Flash",       style: "gemini", premium: true },
+  "gemini-2.5-flash":           { label: "Gemini 2.5 Flash",     style: "gemini", premium: true },
+  // Fast "lite" tier — guests + staff. These are quick and good at JSON.
+  [FLASH_LITE_31]:              { label: "Gemini 3.1 Flash Lite", style: "gemini", bucket: "flash31lite" },
+  "gemini-2.5-flash-lite":      { label: "Gemini 2.5 Flash Lite", style: "gemini", bucket: "flash25lite" },
+  "gemini-2.0-flash-lite-001":  { label: "Gemini 2.0 Flash Lite", style: "gemini", bucket: "flash20lite" },
+  "gemini-2.0-flash-001":       { label: "Gemini 2.0 Flash",      style: "gemini", bucket: "flash20" },
+  // Gemma 4 — slow bonus alternatives, guests + staff.
+  [GEMMA4_31B]:                 { label: "Gemma 4 31B",          style: "gemma4", bucket: "gemma4-31b" },
+  [GEMMA4_26B]:                 { label: "Gemma 4 26B",          style: "gemma4", bucket: "gemma4-26b" },
 };
 
-// Models guests (anonymous) may use. Gemma 4 + a small ration of Flash 3.1 Lite.
-const ANON_MODELS = [FLASH_LITE, GEMMA4_31B, GEMMA4_26B];
+// Models guests (anonymous) may race. Four fast Gemini "lite" models + Gemma 4.
+const ANON_MODELS = [
+  FLASH_LITE_31,
+  "gemini-2.5-flash-lite",
+  "gemini-2.0-flash-lite-001",
+  "gemini-2.0-flash-001",
+  GEMMA4_31B,
+  GEMMA4_26B,
+];
 const STAFF_MODELS = Object.keys(MODELS);
 
 // Daily caps on the total number of generations a single user may trigger.
 const USER_DAILY = { staff: 500, anon: 50 };
 
-// Extra per-model caps for guests only:
-//  - perUser: how many times one guest may use this model per day (within USER_DAILY).
+// Extra per-model caps for guests only — how many times one guest may use a
+// given model per day (still within USER_DAILY). Models not listed: no sub-cap.
 const ANON_MODEL_PER_USER = {
-  [FLASH_LITE]: 10,
+  [FLASH_LITE_31]: 10,
+  "gemini-2.5-flash-lite": 15,
+  "gemini-2.0-flash-lite-001": 20,
+  "gemini-2.0-flash-001": 12,
 };
-// Global per-bucket caps per day (UTC), guests only. A model with no bucket here
-// has no global cap.
+// Global per-bucket caps per day (UTC), guests only. A model whose bucket isn't
+// listed here has no global cap. Tune these to stay under the API key's free quota.
 const GLOBAL_CAPS = {
-  flashlite: 300,
+  flash31lite: 300,
+  flash25lite: 700,
+  flash20lite: 1200,
+  flash20: 150,
   "gemma4-31b": 5000,
   "gemma4-26b": 1000,
 };
+
+// A single model call is abandoned after this long (Gemma 4 in particular can
+// otherwise hang for many minutes). The fast models will have answered well before.
+const CALL_TIMEOUT_MS = 70000;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -107,16 +132,32 @@ function buildBody(modelName, systemInstruction, userText, { prefill = false } =
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function callRaw(modelName, body, apiKey, attempt = 0) {
-  const res = await fetch(`${API_BASE}/${modelName}:generateContent?key=${apiKey}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), CALL_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(`${API_BASE}/${modelName}:generateContent?key=${apiKey}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      signal: ctrl.signal,
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    const why = ctrl.signal.aborted ? `timeout efter ${CALL_TIMEOUT_MS / 1000}s` : `nätverksfel (${e?.message || e})`;
+    // One quick retry for a timeout / network blip, then give up so the race
+    // isn't held hostage by a slow model.
+    if (attempt < 1) {
+      await sleep(1000 + Math.random() * 1000);
+      return callRaw(modelName, body, apiKey, attempt + 1);
+    }
+    throw new Error(why);
+  }
+  clearTimeout(timer);
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    // Free-tier rate limits (429) and transient server errors (5xx) are common
-    // when firing several Gemma models at once — back off and retry a couple of
-    // times before giving up.
+    // Free-tier rate limits (429) and transient server errors (5xx) — back off
+    // and retry a couple of times before giving up.
     if ((res.status === 429 || res.status >= 500) && attempt < 2) {
       await sleep(2500 * (attempt + 1) + Math.random() * 1000);
       return callRaw(modelName, body, apiKey, attempt + 1);
