@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app.js";
 import { getFirestore, doc, setDoc, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
+import { getFunctions } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-functions.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
@@ -15,6 +16,8 @@ const firebaseConfig = {
 export const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
 export const auth = getAuth(app);
+// Region must match the deployed Cloud Function (functions/index.js -> REGION).
+export const functions = getFunctions(app, "europe-west1");
 
 // Den nya, smarta Auth-hanteraren
 export const authReady = new Promise((resolve, reject) => {

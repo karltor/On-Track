@@ -1,0 +1,19 @@
+{
+  "name": "on-track-functions",
+  "description": "Cloud Functions for On-Track AI board generation proxy",
+  "engines": {
+    "node": "20"
+  },
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "serve": "firebase emulators:start --only functions,firestore,auth",
+    "deploy": "firebase deploy --only functions"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^6.1.0",
+    "jsonrepair": "^3.8.0"
+  },
+  "private": true
+}
