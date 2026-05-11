@@ -8,14 +8,12 @@ callable `generateBoard`, region `europe-west1`). Funktionen håller Gemini/Gemm
 API-nyckeln, så klienten ser den aldrig, och den enforcar dagsgränser:
 
 - Gäst (anonym Firestore-auth): max **50** genereringar/dag per användare. Modeller som
-  racas: Gemini 3.1 Flash Lite, Gemini 2.5 Flash Lite, Gemini 2.0 Flash Lite, Gemini 2.0
-  Flash (alla snabba), plus Gemma 4 31B & 26B som långsamma bonus-alternativ (avbryts av
-  per-anrops-timeouten om de inte hinner klart). Varje gäst har dessutom en egen
-  dygnskvot per modell (`ANON_MODEL_PER_USER` i `functions/index.js`, t.ex. 10/dag för
-  3.1 Flash Lite).
+  racas: Gemini 3.1 Flash Lite, Gemini 2.5 Flash Lite (båda snabba), plus Gemma 4 31B & 26B
+  som långsamma bonus-alternativ (avbryts av per-anrops-timeouten om de inte hinner klart).
+  Varje gäst har dessutom en egen dygnskvot per modell (`ANON_MODEL_PER_USER` i
+  `functions/index.js`, t.ex. 10/dag för 3.1 Flash Lite, 15/dag för 2.5 Flash Lite).
 - Globala gäst-tak per dygn (UTC) i `GLOBAL_CAPS`: 300 (3.1 Flash Lite), 700 (2.5 Flash
-  Lite), 1200 (2.0 Flash Lite), 150 (2.0 Flash), 5000/1000 (Gemma 4 31B/26B). Tunas så de
-  håller sig under API-nyckelns gratiskvot.
+  Lite), 5000/1000 (Gemma 4 31B/26B). Tunas så de håller sig under API-nyckelns gratiskvot.
 - Inloggad Nya Munken-personal (`@nyamunken.se`): full premium-AI — även Gemini 3 Flash
   och Gemini 2.5 Flash, inga per-modell-kvoter, hög skyddsgräns på **500**/dag, räknas
   inte mot gäst-taken.

@@ -31,19 +31,15 @@ const MODELS = {
   // Fast "lite" tier — guests + staff. These are quick and good at JSON.
   [FLASH_LITE_31]:              { label: "Gemini 3.1 Flash Lite", style: "gemini", bucket: "flash31lite" },
   "gemini-2.5-flash-lite":      { label: "Gemini 2.5 Flash Lite", style: "gemini", bucket: "flash25lite" },
-  "gemini-2.0-flash-lite-001":  { label: "Gemini 2.0 Flash Lite", style: "gemini", bucket: "flash20lite" },
-  "gemini-2.0-flash-001":       { label: "Gemini 2.0 Flash",      style: "gemini", bucket: "flash20" },
   // Gemma 4 — slow bonus alternatives, guests + staff.
   [GEMMA4_31B]:                 { label: "Gemma 4 31B",          style: "gemma4", bucket: "gemma4-31b" },
   [GEMMA4_26B]:                 { label: "Gemma 4 26B",          style: "gemma4", bucket: "gemma4-26b" },
 };
 
-// Models guests (anonymous) may race. Four fast Gemini "lite" models + Gemma 4.
+// Models guests (anonymous) may race. The fast Gemini "lite" models + Gemma 4.
 const ANON_MODELS = [
   FLASH_LITE_31,
   "gemini-2.5-flash-lite",
-  "gemini-2.0-flash-lite-001",
-  "gemini-2.0-flash-001",
   GEMMA4_31B,
   GEMMA4_26B,
 ];
@@ -57,16 +53,12 @@ const USER_DAILY = { staff: 500, anon: 50 };
 const ANON_MODEL_PER_USER = {
   [FLASH_LITE_31]: 10,
   "gemini-2.5-flash-lite": 15,
-  "gemini-2.0-flash-lite-001": 20,
-  "gemini-2.0-flash-001": 12,
 };
 // Global per-bucket caps per day (UTC), guests only. A model whose bucket isn't
 // listed here has no global cap. Tune these to stay under the API key's free quota.
 const GLOBAL_CAPS = {
   flash31lite: 300,
   flash25lite: 700,
-  flash20lite: 1200,
-  flash20: 150,
   "gemma4-31b": 5000,
   "gemma4-26b": 1000,
 };
