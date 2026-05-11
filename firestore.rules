@@ -37,6 +37,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Delade månadsbudgetar i SEK för gäster respektive lärare. Skrivs bara av
+    // Cloud Function (Admin SDK kringgår dessa regler).
+    match /ai_spend/{ym} {
+      allow read, write: if false;
+    }
+
     // Shared boards: public read, authenticated create, no edits/deletes
     match /shared_boards/{shareId} {
       allow read: if true;

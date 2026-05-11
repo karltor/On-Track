@@ -4,23 +4,31 @@ Inspirerat av På Spåret - Var är vi påväg? Men som gamification för klassr
 ## AI-generering (Cloud Function-proxy)
 
 AI-brädesgenereringen går via en Firebase Cloud Function (`functions/index.js`,
-callable `generateBoard`, region `europe-west1`). Funktionen håller Gemini/Gemma
-API-nyckeln, så klienten ser den aldrig, och den enforcar dagsgränser:
+callable `generateBoard`, region `europe-west1`). Funktionen håller Gemini-API-nyckeln,
+så klienten ser den aldrig, och bokför både dagsanvändning per användare och delad
+månadskostnad per användartyp:
 
-- Gäst (anonym Firestore-auth): max **50** genereringar/dag per användare. Modeller som
-  racas: Gemini 3.1 Flash Lite, Gemini 2.5 Flash Lite (båda snabba), plus Gemma 4 31B & 26B
-  som långsamma bonus-alternativ (avbryts av per-anrops-timeouten om de inte hinner klart).
-  Varje gäst har dessutom en egen dygnskvot per modell (`ANON_MODEL_PER_USER` i
-  `functions/index.js`, t.ex. 10/dag för 3.1 Flash Lite, 15/dag för 2.5 Flash Lite).
-- Globala gäst-tak per dygn (UTC) i `GLOBAL_CAPS`: 300 (3.1 Flash Lite), 700 (2.5 Flash
-  Lite), 5000/1000 (Gemma 4 31B/26B). Tunas så de håller sig under API-nyckelns gratiskvot.
-- Inloggad Nya Munken-personal (`@nyamunken.se`): full premium-AI — även Gemini 3 Flash
-  och Gemini 2.5 Flash, inga per-modell-kvoter, hög skyddsgräns på **500**/dag, räknas
-  inte mot gäst-taken.
+**Modeller (samma lista för alla användare)** — fem snabba Gemini Flash-varianter racas
+parallellt, första svar visas direkt: `gemini-3-flash-preview`, `gemini-3.1-flash-lite`,
+`gemini-3.1-flash-lite-preview`, `gemini-2.5-flash-lite`,
+`gemini-2.5-flash-lite-preview-09-2025`.
 
-> Obs: Gemma 3 (`gemma-3-*-it`) finns inte längre på Gemini-API:t — kvar är bara Gemma 4.
-> Vilka modeller en nyckel har tillgång till syns via `.../v1beta/models`-endpointen.
-> Ett felaktigt modell-id => 404 och modellen hoppas tyst över i racet.
+**Kvoter:**
+
+- **Dagstak per användare** (`USER_DAILY` i `functions/index.js`): 50/dygn för gäster,
+  500/dygn för inloggade lärare. Säkerhetsspärr så ingen enskild användare kan tömma
+  månadsbudgeten på fem minuter.
+- **Delad månadsbudget i SEK** (`MONTHLY_BUDGET_SEK`): 30 kr/månad totalt för gäster,
+  50 kr/månad totalt för lärare. Räknas mot UTC-månad i `ai_spend/{YYYY-MM}`.
+- **Pris-tabell** (`PRICING_USD_PER_M`): USD per 1 M tokens per modell. Kontrollera mot
+  <https://ai.google.dev/gemini-api/docs/pricing#standard> och uppdatera om Google ändrar
+  priserna. `SEK_PER_USD` = 10.5 (justera vid större valutaändring).
+- **Inloggad lärare** = `@nyamunken.se`-konto utan tre siffror i rad i prefixet. Räknas
+  mot lärarbudgeten i stället för gäst-budgeten.
+
+När månadsbudgeten är slut returnerar funktionen `BUDGET_EXHAUSTED_ANON` /
+`_STAFF` → klienten öppnar en dialog som hänvisar till **"Klistra in JSON"**-vägen
+(generera via valfri chattbot och importera resultatet).
 
 ### Steg-för-steg: så här deployar du (för nybörjare)
 

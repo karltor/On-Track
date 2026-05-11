@@ -86,16 +86,69 @@ function fillAccessBanner(id, tier) {
     if (!el) return;
     if (tier === 'staff') {
         el.className = "text-xs rounded-lg p-3 mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 flex items-center justify-between gap-2";
-        el.innerHTML = `<span>✅ Inloggad som lärare – premium-AI (Gemini-modeller) aktiv.</span><button onclick="signOutToGuest()" class="font-bold underline hover:no-underline shrink-0">Logga ut</button>`;
+        el.innerHTML = `<span>✅ Inloggad som Nya Munken-personal. Anropen räknas mot lärarbudgeten.</span><button onclick="signOutToGuest()" class="font-bold underline hover:no-underline shrink-0">Logga ut</button>`;
     } else {
         el.className = "text-xs rounded-lg p-3 mb-4 bg-indigo-50 border border-indigo-200 text-indigo-800 flex items-center justify-between gap-3";
-        el.innerHTML = `<span>💼 Du genererar som gäst (max 50 AI-bräden per dag). Jobbar du på Nya Munken?</span><button onclick="signInAsStaff()" class="shrink-0 font-bold bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-500 transition">Logga in för full premium-AI</button>`;
+        el.innerHTML = `<span>💼 Du genererar som gäst (delar månadsbudget med andra gäster, max 50/dag per användare). Jobbar du på Nya Munken?</span><button onclick="signInAsStaff()" class="shrink-0 font-bold bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-500 transition">Logga in</button>`;
     }
 }
 
 // Håll inloggnings-UI:t i synk.
 onAuthStateChanged(auth, () => updateAuthUi());
 authReady.then(() => updateAuthUi()).catch(() => updateAuthUi());
+
+// ==========================================
+// 1c. BUDGET-DIALOG (när månadsbudgeten är slut)
+// ==========================================
+window.openBudgetExhaustedModal = (tier) => {
+    const modal = document.getElementById('budgetModal');
+    const content = document.getElementById('budgetModalContent');
+    const body = document.getElementById('budgetModalBody');
+    if (!modal || !body) {
+        window.showToast(tier === 'staff' ? "Månadens lärar-AI-budget är slut." : "Månadens gäst-AI-budget är slut.", "💸");
+        return;
+    }
+    if (tier === 'staff') {
+        body.innerHTML = `
+            <p class="mb-3"><strong>Lärarbudgeten (~50 kr/mån) är förbrukad.</strong> AI-generering pausas tills nästa månad, eller tills spend-limit för Google Cloud-projektet höjs.</p>
+            <p class="text-slate-600">Tills dess kan du skapa bräden manuellt:</p>`;
+    } else {
+        body.innerHTML = `
+            <p class="mb-3"><strong>Gästernas delade AI-budget för månaden är slut.</strong> Inloggade Nya Munken-lärare kan fortsätta använda AI, men som gäst kan du tyvärr inte generera bräden via AI just nu.</p>
+            <p class="text-slate-600">Du kan ändå göra ett bräde med <em>vilken som helst</em> chattbot (ChatGPT, Claude, Gemini.com, etc.) och importera resultatet:</p>`;
+    }
+    body.innerHTML += `
+        <ol class="list-decimal pl-5 mt-3 space-y-2 text-slate-700">
+            <li>Öppna ett befintligt bräde och klicka på <strong>"Exportera paket → Kopiera JSON-kod"</strong> för att få JSON-mallen.</li>
+            <li>Klistra in JSON:en i din chattbot tillsammans med din önskan, t.ex.: <em>"Skriv om detta paket så att det handlar om Europas huvudstäder. Returnera EXAKT samma JSON-format."</em></li>
+            <li>Kopiera chattbottens JSON-svar.</li>
+            <li>Klicka på <strong>"Klistra in JSON"</strong> uppe i högra hörnet här i appen och klistra in.</li>
+        </ol>`;
+
+    modal.classList.remove('hidden');
+    modal.classList.add('flex');
+    setTimeout(() => {
+        modal.classList.remove('opacity-0');
+        if (content) content.classList.remove('scale-95');
+    }, 10);
+};
+
+window.closeBudgetExhaustedModal = () => {
+    const modal = document.getElementById('budgetModal');
+    const content = document.getElementById('budgetModalContent');
+    if (!modal) return;
+    modal.classList.add('opacity-0');
+    if (content) content.classList.add('scale-95');
+    setTimeout(() => {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }, 200);
+};
+
+window.openImportFromBudgetModal = () => {
+    window.closeBudgetExhaustedModal();
+    if (typeof setView === 'function') setView('import');
+};
 
 // ==========================================
 // 2. SKAPA NYTT BRÄDE MED AI
@@ -130,12 +183,10 @@ window.closeAiModal = () => {
     }, 200);
 };
 
-function setAiLoadingText(loadingElId, tier) {
+function setAiLoadingText(loadingElId /*, tier */) {
     const p = document.querySelector(`#${loadingElId} p`);
     if (!p) return;
-    p.textContent = tier === 'staff'
-        ? 'AI:n tänker (ca 10–15 sekunder)...'
-        : 'AI:n tänker (det första förslaget kan dröja upp till en minut)...';
+    p.textContent = 'AI:n tänker (ca 10–15 sekunder)...';
 }
 
 window.generateAiBoard = async () => {
@@ -179,7 +230,8 @@ Krav:
         window.closeAiModal();
         document.getElementById('aiPrompt').value = '';
     } catch (e) {
-        window.showToast(e.message || "Något gick fel med AI-anropet.", "❌");
+        if (e && e.budgetExhausted) { window.closeAiModal(); window.openBudgetExhaustedModal(e.tier); }
+        else window.showToast(e.message || "Något gick fel med AI-anropet.", "❌");
     } finally {
         document.getElementById('aiLoading').classList.add('hidden');
         document.getElementById('aiLoading').classList.remove('flex');
@@ -253,7 +305,8 @@ Krav för ditt svar:
         window.closeAiEditModal();
         document.getElementById('aiEditPrompt').value = '';
     } catch (e) {
-        window.showToast(e.message || "Något gick fel med AI-redigeringen.", "❌");
+        if (e && e.budgetExhausted) { window.closeAiEditModal(); window.openBudgetExhaustedModal(e.tier); }
+        else window.showToast(e.message || "Något gick fel med AI-redigeringen.", "❌");
     } finally {
         document.getElementById('aiEditLoading').classList.add('hidden');
         document.getElementById('aiEditLoading').classList.remove('flex');
@@ -264,17 +317,26 @@ Krav för ditt svar:
 // ==========================================
 // 4. AI-GENERERING VIA CLOUD FUNCTION
 // ==========================================
+// Konverterar ett Firebase-funktionsfel till ett `Error` vi kan kasta vidare.
+// För budget-tomma fall sätts `.budgetExhausted` + `.tier` så att anroparen kan
+// öppna budget-dialogen i stället för att toasta.
 function mapAiError(e) {
     const code = e && e.code;
     const msg = (e && e.message) || '';
     if (code === 'functions/resource-exhausted') {
-        if (msg === 'USER_LIMIT') return "Du har nått dagsgränsen (50 AI-bräden idag). Logga in med ett Nya Munken-konto för premium-AI utan begränsning.";
-        if (msg === 'GLOBAL_LIMIT') return "AI-tjänsten är slut för idag (gästkvoten är förbrukad). Försök igen imorgon.";
-        return msg || "Dagsgränsen för AI-generering är nådd.";
+        if (msg === 'BUDGET_EXHAUSTED_ANON' || msg === 'BUDGET_EXHAUSTED_STAFF') {
+            const err = new Error(msg);
+            err.budgetExhausted = true;
+            err.tier = msg === 'BUDGET_EXHAUSTED_ANON' ? 'anon' : 'staff';
+            return err;
+        }
+        if (msg === 'USER_LIMIT') return new Error("Du har nått dagsgränsen (50 AI-bräden idag som gäst). Försök igen imorgon eller logga in som Nya Munken-personal.");
+        if (msg === 'STAFF_USER_LIMIT') return new Error("Du har nått dagsgränsen för AI-generering.");
+        return new Error(msg || "Dagsgränsen för AI-generering är nådd.");
     }
-    if (code === 'functions/unauthenticated') return "Du är inte inloggad. Ladda om sidan och försök igen.";
-    if (code === 'functions/invalid-argument') return msg || "Ogiltig förfrågan.";
-    return msg || "Något gick fel med AI-anropet. Servern kan vara överbelastad.";
+    if (code === 'functions/unauthenticated') return new Error("Du är inte inloggad. Ladda om sidan och försök igen.");
+    if (code === 'functions/invalid-argument') return new Error(msg || "Ogiltig förfrågan.");
+    return new Error(msg || "Något gick fel med AI-anropet. Servern kan vara överbelastad.");
 }
 
 // Tar emot ett färdigt AI-utkast. Det FÖRSTA som kommer in ritas ut direkt;
@@ -314,7 +376,8 @@ function runAiGeneration(mode, systemPrompt, userText, isEditMode) {
         const failWith = (e) => {
             if (settled) return;
             settled = true;
-            reject(e instanceof Error ? e : new Error(mapAiError(e)));
+            // mapAiError always returns an Error; pass through if already mapped.
+            reject(e && e.budgetExhausted ? e : mapAiError(e));
         };
 
         (async () => {
