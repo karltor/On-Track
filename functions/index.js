@@ -15,13 +15,11 @@ const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // ---------------------------------------------------------------------------
 // Model catalogue
 // ---------------------------------------------------------------------------
-// NOTE: The exact "Gemma 4" model identifiers below are best-effort placeholders.
-// Update GEMMA4_31B / GEMMA4_26B to the real `models/...` ids once confirmed via
-// the models.list endpoint or Google's model docs. If a model id is wrong the
-// request just 404s and that model is silently dropped from the race, so the
-// app keeps working with the remaining models in the meantime.
+// Gemma 4 model ids per https://ai.google.dev/gemma/docs/core/gemma_on_gemini_api
+// If an id is wrong the request 404s and that model is silently dropped from the
+// race, so the app keeps working with the remaining models.
 const GEMMA4_31B = "gemma-4-31b-it";
-const GEMMA4_26B = "gemma-4-26b-it";
+const GEMMA4_26B = "gemma-4-26b-a4b-it";
 
 const MODELS = {
   "gemini-3-flash-preview":        { label: "Flash 3 Preview", style: "gemini", premium: true },
@@ -252,6 +250,10 @@ export const generateBoard = onCall(
     // --- Fan out to the allowed models, streaming each result as it lands ---
     const apiKey = GEMINI_API_KEY.value();
     const drafts = [];
+    const errors = [];
+    const emit = (obj) => {
+      if (response && typeof response.sendChunk === "function") response.sendChunk(obj);
+    };
     await Promise.allSettled(
       allowedModels.map(async (modelName) => {
         try {
@@ -266,20 +268,23 @@ export const generateBoard = onCall(
             },
           };
           drafts.push(draft);
-          // Emit immediately so the client can render the first model to finish.
-          if (response && typeof response.sendChunk === "function") {
-            response.sendChunk({ draft });
-          }
+          emit({ draft });
         } catch (err) {
-          console.warn(`Model ${modelName} failed:`, err?.message || err);
+          const message = (err && err.message) ? err.message : String(err);
+          console.warn(`Model ${modelName} failed:`, message);
+          errors.push({ model: modelName, message });
+          emit({ error: { model: modelName, message } });
         }
       })
     );
 
     if (drafts.length === 0) {
-      throw new HttpsError("internal", "Alla AI-anrop misslyckades. Försök igen om en stund.");
+      throw new HttpsError(
+        "internal",
+        "Alla AI-anrop misslyckades. " + errors.map((e) => `${e.model}: ${e.message}`).join(" | ")
+      );
     }
 
-    return { tier, drafts };
+    return { tier, drafts, errors };
   }
 );
