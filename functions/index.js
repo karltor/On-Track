@@ -93,11 +93,13 @@ function buildBody(modelName, systemInstruction, userText, { prefill = false } =
 
   return {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2, maxOutputTokens: 4096 },
+    generationConfig: { temperature: 0.2, maxOutputTokens: 8192 },
   };
 }
 
-async function callRaw(modelName, body, apiKey) {
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function callRaw(modelName, body, apiKey, attempt = 0) {
   const res = await fetch(`${API_BASE}/${modelName}:generateContent?key=${apiKey}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -105,12 +107,23 @@ async function callRaw(modelName, body, apiKey) {
   });
   if (!res.ok) {
     const txt = await res.text().catch(() => "");
-    throw new Error(`API ${res.status} for ${modelName}: ${txt.slice(0, 200)}`);
+    // Free-tier rate limits (429) are common when firing several Gemma models at
+    // once — back off briefly and retry a couple of times before giving up.
+    if (res.status === 429 && attempt < 2) {
+      await sleep(2500 * (attempt + 1) + Math.random() * 1000);
+      return callRaw(modelName, body, apiKey, attempt + 1);
+    }
+    throw new Error(`API ${res.status}: ${txt.slice(0, 300)}`);
   }
   const data = await res.json();
   const cand = data?.candidates?.[0];
+  const finishReason = cand?.finishReason || "";
   const text = cand?.content?.parts?.map((p) => p.text || "").join("") || "";
-  return { text, finishReason: cand?.finishReason || "" };
+  if (!text) {
+    const block = data?.promptFeedback?.blockReason || finishReason || "okänd";
+    throw new Error(`tomt svar (finishReason=${finishReason || "?"}, block=${block})`);
+  }
+  return { text, finishReason };
 }
 
 // Port of the client-side parseAiResponse: extract { ... }, repair, validate.
