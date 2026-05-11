@@ -86,7 +86,7 @@ function fillAccessBanner(id, tier) {
     if (!el) return;
     if (tier === 'staff') {
         el.className = "text-xs rounded-lg p-3 mb-4 bg-emerald-50 border border-emerald-200 text-emerald-800 flex items-center justify-between gap-2";
-        el.innerHTML = `<span>✅ Inloggad som Nya Munken-personal. Anropen räknas mot lärarbudgeten.</span><button onclick="signOutToGuest()" class="font-bold underline hover:no-underline shrink-0">Logga ut</button>`;
+        el.innerHTML = `<span>✅ Inloggad som Nya Munken-personal. Kontakta Karl om något inte fungerar.</span><button onclick="signOutToGuest()" class="font-bold underline hover:no-underline shrink-0">Logga ut</button>`;
     } else {
         el.className = "text-xs rounded-lg p-3 mb-4 bg-indigo-50 border border-indigo-200 text-indigo-800 flex items-center justify-between gap-3";
         el.innerHTML = `<span>💼 Du genererar som gäst (delar månadsbudget med andra gäster, max 50/dag per användare). Jobbar du på Nya Munken?</span><button onclick="signInAsStaff()" class="shrink-0 font-bold bg-indigo-600 text-white px-3 py-1.5 rounded-md hover:bg-indigo-500 transition">Logga in</button>`;
