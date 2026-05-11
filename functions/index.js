@@ -21,7 +21,6 @@ const MODELS = {
   "gemini-3.1-flash-lite":                 { label: "Gemini 3.1 Flash Lite",        style: "gemini" },
   "gemini-3.1-flash-lite-preview":         { label: "Gemini 3.1 Flash Lite Preview", style: "gemini" },
   "gemini-2.5-flash-lite":                 { label: "Gemini 2.5 Flash Lite",        style: "gemini" },
-  "gemini-2.5-flash-lite-preview-09-2025": { label: "Gemini 2.5 Flash Lite (Sep 2025)", style: "gemini" },
 };
 const ALL_MODELS = Object.keys(MODELS);
 
@@ -40,7 +39,6 @@ const PRICING_USD_PER_M = {
   "gemini-3.1-flash-lite":                 { in: 0.25, out: 1.50 },
   "gemini-3.1-flash-lite-preview":         { in: 0.25, out: 1.50 },
   "gemini-2.5-flash-lite":                 { in: 0.10, out: 0.40 },
-  "gemini-2.5-flash-lite-preview-09-2025": { in: 0.10, out: 0.40 },
 };
 const SEK_PER_USD = 9.5;
 
