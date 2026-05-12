@@ -35,7 +35,7 @@ const MONTHLY_BUDGET_SEK = { anon: 30, staff: 50 };
 // Hard global daily ceiling across ALL users and tiers combined. Last-resort cap
 // so a burst of fresh (anonymous) identities can't run up more than this in a
 // single UTC day. The per-day document ID makes it self-reset at midnight UTC.
-const DAILY_BUDGET_SEK = 10;
+const DAILY_BUDGET_SEK = 5;
 
 // Verified against https://ai.google.dev/gemini-api/docs/pricing#standard
 // USD per 1 000 000 tokens. Tune if Google changes prices.
