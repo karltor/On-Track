@@ -9,7 +9,7 @@ import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com
 // i Firebase Console → App Check → din webb-app. Ersätt platshållaren nedan.
 // OBS: Cloud Function:en (generateBoard) körs med enforceAppCheck: true – den
 // avvisar ALLA anrop tills nyckeln nedan är ifylld OCH registrerad i konsolen.
-const APPCHECK_RECAPTCHA_V3_SITE_KEY = "RECAPTCHA_V3_SITE_KEY_HERE";
+const APPCHECK_RECAPTCHA_V3_SITE_KEY = "6LcN2uYsAAAAAHtSzsNPA-nLJkirLI47mSv1O-2x";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
