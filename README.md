@@ -4,9 +4,12 @@ Inspirerat av På Spåret - Var är vi påväg? Men som gamification för klassr
 ## AI-generering (Cloud Function-proxy)
 
 AI-brädesgenereringen går via en Firebase Cloud Function (`functions/index.js`,
-callable `generateBoard`, region `europe-west1`). Funktionen håller Gemini-API-nyckeln,
-så klienten ser den aldrig, och bokför både dagsanvändning per användare och delad
-månadskostnad per användartyp:
+callable `generateBoard`, region `europe-west1`). Funktionen håller Gemini-API-nyckeln
+(klienten ser den aldrig) **och själva system-prompten** – klienten kan bara välja ämne
+(`create`) eller skicka in brädet + ändringsinstruktion (`edit`), aldrig hela
+instruktionen, så proxyn inte kan kapas till en gratis-LLM. Anropen kräver dessutom
+**Firebase App Check** (steg 3b nedan). Funktionen bokför dagsanvändning per användare,
+delad månadskostnad per användartyp, och en hård global dagsbudget i SEK:
 
 **Modeller (samma lista för alla användare)** — fyra snabba Gemini Flash-varianter racas
 parallellt, första svar visas direkt: `gemini-3-flash-preview`, `gemini-3.1-flash-lite`,
@@ -19,6 +22,10 @@ parallellt, första svar visas direkt: `gemini-3-flash-preview`, `gemini-3.1-fla
   månadsbudgeten på fem minuter.
 - **Delad månadsbudget i SEK** (`MONTHLY_BUDGET_SEK`): 30 kr/månad totalt för gäster,
   50 kr/månad totalt för lärare. Räknas mot UTC-månad i `ai_spend/{YYYY-MM}`.
+- **Hård global dagsbudget i SEK** (`DAILY_BUDGET_SEK`): 10 kr/dygn totalt för alla
+  användare och tier:ar tillsammans. Räknas mot UTC-dygn i `ai_global/{YYYY-MM-DD}`.
+  Sista spärren – tillsammans med App Check – mot att någon kringgår per-användare-taket
+  genom att skapa hur många anonyma konton som helst. Slut → `DAILY_BUDGET_EXHAUSTED`.
 - **Pris-tabell** (`PRICING_USD_PER_M`): USD per 1 M tokens per modell. Kontrollera mot
   <https://ai.google.dev/gemini-api/docs/pricing#standard> och uppdatera om Google ändrar
   priserna. `SEK_PER_USD` = 10.5 (justera vid större valutaändring).
@@ -72,12 +79,32 @@ firebase functions:secrets:set GEMINI_API_KEY
 Klistra in API-nyckeln när den frågar och tryck Enter. (Nyckeln hamnar i Google Cloud
 Secret Manager och skrivs ALDRIG i koden eller i repot.)
 
+**3b. Sätt upp Firebase App Check (reCAPTCHA v3)**
+
+Funktionen är deployad med `enforceAppCheck: true`. Gör DETTA INNAN du deployar i steg 4,
+annars avvisas alla AI-anrop:
+
+1. Skapa en reCAPTCHA **v3**-nyckel på <https://www.google.com/recaptcha/admin/create>
+   (välj "Score based (v3)", lägg till domänen där appen körs, t.ex. `karltor.github.io`
+   och `localhost`). Kopiera **site key** (den publika nyckeln) och **secret key**.
+2. Firebase Console → ⚙️ → **App Check** → fliken **Apps** → välj din webb-app →
+   **reCAPTCHA v3** → klistra in *secret key* → Spara.
+3. Öppna `admin.js` och byt ut `RECAPTCHA_V3_SITE_KEY_HERE` mot din *site key*.
+4. (Valfritt men rekommenderat) I App Check, sätt **Enforcement** på *Cloud Functions*
+   till "Enforced".
+
+För lokala emulator-tester: kör i webbläsarkonsolen `self.FIREBASE_APPCHECK_DEBUG_TOKEN = true`
+innan sidan laddar, kopiera debug-token ur konsolen och registrera den i App Check →
+Manage debug tokens. (Functions-emulatorn struntar oftast i App Check, men ID-token-flödet
+behöver fungera.)
+
 **4. Deploya funktionen + de uppdaterade Firestore-reglerna**
 
 ```sh
 firebase deploy --only functions,firestore:rules
 ```
-Det tar någon minut. När det står "Deploy complete!" är AI-proxyn live.
+Det tar någon minut. När det står "Deploy complete!" är AI-proxyn live. (Första gången
+aktiveras även Firebase App Check API automatiskt – säg ja.)
 
 **5. Testa**
 
@@ -94,6 +121,11 @@ går ändå inte längre att läsa från klienten (`firestore.rules` blockerar d
 > deployas inte automatiskt — du måste köra `firebase deploy --only functions,firestore:rules`
 > manuellt (t.ex. i Google Cloud Shell) varje gång `functions/` eller `firestore.rules` ändras.
 
-Firestore-collections som funktionen använder: `ai_usage/{uid}` (per-användare/dag)
-och `ai_spend/{YYYY-MM}` (delade månadskostnader i SEK). Klienter kan varken läsa
-eller skriva dessa (se `firestore.rules`).
+Firestore-collections som funktionen använder: `ai_usage/{uid}` (per-användare/dag),
+`ai_spend/{YYYY-MM}` (delade månadskostnader i SEK) och `ai_global/{YYYY-MM-DD}`
+(global dygnskostnad i SEK). Klienter kan varken läsa eller skriva dessa (se
+`firestore.rules`).
+
+Vill du följa förbrukningen i loggarna: `firebase functions:log --only generateBoard`
+(eller Google Cloud Console → Logging). Varje anrop loggar en `[generateBoard] …`-rad
+med användarens dagsräknare samt månads- och dygnskostnad.
