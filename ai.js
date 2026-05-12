@@ -105,12 +105,21 @@ window.openBudgetExhaustedModal = (tier) => {
     const content = document.getElementById('budgetModalContent');
     const body = document.getElementById('budgetModalBody');
     if (!modal || !body) {
-        window.showToast(tier === 'staff' ? "Månadens lärar-AI-budget är slut." : "Månadens gäst-AI-budget är slut.", "💸");
+        window.showToast(
+            tier === 'staff' ? "Månadens lärar-AI-budget är slut."
+            : tier === 'daily' ? "Dagens totala AI-budget är slut. Försök igen imorgon."
+            : "Månadens gäst-AI-budget är slut.",
+            "💸"
+        );
         return;
     }
     if (tier === 'staff') {
         body.innerHTML = `
             <p class="mb-3"><strong>Lärarbudgeten (~50 kr/mån) är förbrukad.</strong> AI-generering pausas tills nästa månad, eller tills spend-limit för Google Cloud-projektet höjs.</p>
+            <p class="text-slate-600">Tills dess kan du skapa bräden manuellt:</p>`;
+    } else if (tier === 'daily') {
+        body.innerHTML = `
+            <p class="mb-3"><strong>Dagens totala AI-budget (~10 kr/dygn) är förbrukad.</strong> AI-generering pausas tills imorgon (nollställs vid UTC-midnatt).</p>
             <p class="text-slate-600">Tills dess kan du skapa bräden manuellt:</p>`;
     } else {
         body.innerHTML = `
@@ -200,32 +209,7 @@ window.generateAiBoard = async () => {
     try {
         const tier = await ensureAiSignedIn();
         setAiLoadingText('aiLoading', tier);
-        const systemPrompt = `Du är en expert på att skapa engagerande och språkligt rika frågesporter för skolelever, exakt i samma anda som TV-programmet 'På Spåret'.
-
-Krav:
-1. Skapa exakt 5 stycken frågor ("boards").
-2. Varje fråga ska ha 1 tydligt svar (stad, person, land, händelse, vetenskapligt begrepp etc).
-3. Varje fråga måste ha exakt 5 ledtrådar i fallande svårighetsgrad (10p, 8p, 6p, 4p, 2p).
-4. Språket, längden och strukturen på ledtrådarna MÅSTE följa denna exakta mall:
-   - 10p: Mycket extravagant, akademiskt, snirkligt och rikt språk. Kryptiskt men faktamässigt korrekt. Använd avancerade synonymer. Ska gärna börja med "Vi söker...". (Minst 20-30 ord).
-   - 8p: Fortfarande avancerat, ofta med historisk kontext, specifika namn, årtal eller djupare detaljer. (Ca 15-25 ord).
-   - 6p: Medelsvårt. Kopplar till välkända exempel, bredare fakta eller kända anekdoter. (Ca 15-20 ord).
-   - 4p: Standarddefinitionen, som hämtad ur en skolbok. Tydligt och rakt på sak. (Ca 10-15 ord).
-   - 2p: Mycket lätt och direkt. Ge nästan bort svaret helt, t.ex. genom första bokstaven, en extremt känd egenskap eller förkortning. (Ca 8-12 ord).
-
-5. Returnera ENDAST giltig JSON i exakt detta format (inga markdown-taggar, ingen extra text):
-{
-  "title": "Paketets namn",
-  "boards": [
-    {
-      "answer": "Svaret",
-      "clues": ["10p: [Ledtråd]", "8p: [Ledtråd]", "6p: [Ledtråd]", "4p: [Ledtråd]", "2p: [Ledtråd]"]
-    }
-  ]
-}`;
-        const userText = `Skapa ett quizpaket om ämnet: "${promptText}".`;
-
-        await runAiGeneration('create', systemPrompt, userText, false);
+        await runAiGeneration('create', { theme: promptText }, false);
 
         window.closeAiModal();
         document.getElementById('aiPrompt').value = '';
@@ -289,18 +273,7 @@ window.submitAiEdit = async () => {
     try {
         const tier = await ensureAiSignedIn();
         setAiLoadingText('aiEditLoading', tier);
-        const systemPrompt = `Du är en expert på att skapa engagerande och språkligt rika frågesporter för skolelever, exakt i samma anda som TV-programmet 'På Spåret'.
-Din uppgift är att skriva om, förbättra eller modifiera ett existerande quiz-paket baserat på användarens direkta feedback.
-
-Krav för ditt svar:
-1. Skapa/behåll exakt 5 stycken frågor ("boards"), om inte användaren uttryckligen ber om ett annat antal, men försök alltid ha 5.
-2. Varje fråga måste ha exakt 5 ledtrådar i fallande svårighetsgrad (10p, 8p, 6p, 4p, 2p).
-3. Språket och strukturen på de omskrivna eller nya ledtrådarna MÅSTE följa exakt samma poängmall (10p snirkligt, 2p extremt lätt).
-4. Returnera ENDAST giltig JSON i exakt samma format som indatan. Inga markdown-taggar, ingen extra text.`;
-
-        const userText = `Här är det nuvarande quiz-paketet (JSON):\n${JSON.stringify(currentBoard)}\n\nINSTRUKTION FÖR ÄNDRING:\n"${promptText}"`;
-
-        await runAiGeneration('edit', systemPrompt, userText, true);
+        await runAiGeneration('edit', { board: currentBoard, instruction: promptText }, true);
 
         window.closeAiEditModal();
         document.getElementById('aiEditPrompt').value = '';
@@ -324,10 +297,12 @@ function mapAiError(e) {
     const code = e && e.code;
     const msg = (e && e.message) || '';
     if (code === 'functions/resource-exhausted') {
-        if (msg === 'BUDGET_EXHAUSTED_ANON' || msg === 'BUDGET_EXHAUSTED_STAFF') {
+        if (msg === 'BUDGET_EXHAUSTED_ANON' || msg === 'BUDGET_EXHAUSTED_STAFF' || msg === 'DAILY_BUDGET_EXHAUSTED') {
             const err = new Error(msg);
             err.budgetExhausted = true;
-            err.tier = msg === 'BUDGET_EXHAUSTED_ANON' ? 'anon' : 'staff';
+            err.tier = msg === 'BUDGET_EXHAUSTED_ANON' ? 'anon'
+                     : msg === 'BUDGET_EXHAUSTED_STAFF' ? 'staff'
+                     : 'daily';
             return err;
         }
         if (msg === 'USER_LIMIT') return new Error("Du har nått dagsgränsen (50 AI-bräden idag som gäst). Försök igen imorgon eller logga in som Nya Munken-personal.");
@@ -362,7 +337,7 @@ function handleIncomingDraft(draft) {
     return false;
 }
 
-function runAiGeneration(mode, systemPrompt, userText, isEditMode) {
+function runAiGeneration(mode, payload, isEditMode) {
     window.aiDrafts = [];
     window.activeDraftIndex = 0;
     window.isAiEditMode = isEditMode;
@@ -384,7 +359,7 @@ function runAiGeneration(mode, systemPrompt, userText, isEditMode) {
             let streamResult;
             try {
                 // Streamande callable: får utkasten ett i taget allt eftersom modellerna blir klara.
-                streamResult = await generateBoardFn.stream({ mode, systemPrompt, userText });
+                streamResult = await generateBoardFn.stream({ mode, ...payload });
             } catch (e) {
                 return failWith(e);
             }

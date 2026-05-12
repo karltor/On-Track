@@ -2,6 +2,14 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.10.0/fireba
 import { getFirestore, doc, setDoc, getDoc, writeBatch } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-firestore.js";
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-auth.js";
 import { getFunctions } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-functions.js";
+import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.10.0/firebase-app-check.js";
+
+// reCAPTCHA v3 site-nyckel för Firebase App Check. Skapa en på
+// https://www.google.com/recaptcha/admin (typ: reCAPTCHA v3) och registrera den
+// i Firebase Console → App Check → din webb-app. Ersätt platshållaren nedan.
+// OBS: Cloud Function:en (generateBoard) körs med enforceAppCheck: true – den
+// avvisar ALLA anrop tills nyckeln nedan är ifylld OCH registrerad i konsolen.
+const APPCHECK_RECAPTCHA_V3_SITE_KEY = "RECAPTCHA_V3_SITE_KEY_HERE";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCZGQi85oGYum0mnUowUcw4QMt3tyoHK1U",
@@ -14,6 +22,19 @@ const firebaseConfig = {
 };
 
 export const app = initializeApp(firebaseConfig);
+
+// App Check: hindrar anrop till generateBoard från icke-godkända ursprung
+// (bottar/skript som inte kör i webbläsaren på vår domän). Detta är spärren mot
+// att någon mintar oändligt med anonyma identiteter för att kringgå dagskvoten.
+try {
+    initializeAppCheck(app, {
+        provider: new ReCaptchaV3Provider(APPCHECK_RECAPTCHA_V3_SITE_KEY),
+        isTokenAutoRefreshEnabled: true,
+    });
+} catch (e) {
+    console.warn("App Check init misslyckades:", e);
+}
+
 export const db = getFirestore(app);
 export const auth = getAuth(app);
 // Region must match the deployed Cloud Function (functions/index.js -> REGION).

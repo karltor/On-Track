@@ -32,6 +32,11 @@ const USER_DAILY = { staff: 500, anon: 50 };
 // all staff. UTC month key. Resets automatically at month rollover.
 const MONTHLY_BUDGET_SEK = { anon: 30, staff: 50 };
 
+// Hard global daily ceiling across ALL users and tiers combined. Last-resort cap
+// so a burst of fresh (anonymous) identities can't run up more than this in a
+// single UTC day. The per-day document ID makes it self-reset at midnight UTC.
+const DAILY_BUDGET_SEK = 10;
+
 // Verified against https://ai.google.dev/gemini-api/docs/pricing#standard
 // USD per 1 000 000 tokens. Tune if Google changes prices.
 const PRICING_USD_PER_M = {
@@ -155,10 +160,52 @@ async function generateWithModel(modelName, systemInstruction, userText, apiKey)
 }
 
 // ---------------------------------------------------------------------------
+// System prompts — kept on the server so a client can only influence the *topic*
+// (create) or supply the board + edit instruction (edit). The full instruction
+// set is never accepted from the client, so the proxy can't be repurposed.
+// ---------------------------------------------------------------------------
+const SYSTEM_PROMPT_CREATE = `Du är en expert på att skapa engagerande och språkligt rika frågesporter för skolelever, exakt i samma anda som TV-programmet 'På Spåret'.
+
+Krav:
+1. Skapa exakt 5 stycken frågor ("boards").
+2. Varje fråga ska ha 1 tydligt svar (stad, person, land, händelse, vetenskapligt begrepp etc).
+3. Varje fråga måste ha exakt 5 ledtrådar i fallande svårighetsgrad (10p, 8p, 6p, 4p, 2p).
+4. Språket, längden och strukturen på ledtrådarna MÅSTE följa denna exakta mall:
+   - 10p: Mycket extravagant, akademiskt, snirkligt och rikt språk. Kryptiskt men faktamässigt korrekt. Använd avancerade synonymer. Ska gärna börja med "Vi söker...". (Minst 20-30 ord).
+   - 8p: Fortfarande avancerat, ofta med historisk kontext, specifika namn, årtal eller djupare detaljer. (Ca 15-25 ord).
+   - 6p: Medelsvårt. Kopplar till välkända exempel, bredare fakta eller kända anekdoter. (Ca 15-20 ord).
+   - 4p: Standarddefinitionen, som hämtad ur en skolbok. Tydligt och rakt på sak. (Ca 10-15 ord).
+   - 2p: Mycket lätt och direkt. Ge nästan bort svaret helt, t.ex. genom första bokstaven, en extremt känd egenskap eller förkortning. (Ca 8-12 ord).
+
+5. Returnera ENDAST giltig JSON i exakt detta format (inga markdown-taggar, ingen extra text):
+{
+  "title": "Paketets namn",
+  "boards": [
+    {
+      "answer": "Svaret",
+      "clues": ["10p: [Ledtråd]", "8p: [Ledtråd]", "6p: [Ledtråd]", "4p: [Ledtråd]", "2p: [Ledtråd]"]
+    }
+  ]
+}`;
+
+const SYSTEM_PROMPT_EDIT = `Du är en expert på att skapa engagerande och språkligt rika frågesporter för skolelever, exakt i samma anda som TV-programmet 'På Spåret'.
+Din uppgift är att skriva om, förbättra eller modifiera ett existerande quiz-paket baserat på användarens direkta feedback.
+
+Krav för ditt svar:
+1. Skapa/behåll exakt 5 stycken frågor ("boards"), om inte användaren uttryckligen ber om ett annat antal, men försök alltid ha 5.
+2. Varje fråga måste ha exakt 5 ledtrådar i fallande svårighetsgrad (10p, 8p, 6p, 4p, 2p).
+3. Språket och strukturen på de omskrivna eller nya ledtrådarna MÅSTE följa exakt samma poängmall (10p snirkligt, 2p extremt lätt).
+4. Returnera ENDAST giltig JSON i exakt samma format som indatan. Inga markdown-taggar, ingen extra text.`;
+
+const MAX_THEME_LEN = 4000;
+const MAX_INSTRUCTION_LEN = 4000;
+const MAX_BOARD_JSON_LEN = 20000;
+
+// ---------------------------------------------------------------------------
 // Callable
 // ---------------------------------------------------------------------------
 export const generateBoard = onCall(
-  { region: REGION, secrets: [GEMINI_API_KEY], timeoutSeconds: 540, memory: "256MiB" },
+  { region: REGION, secrets: [GEMINI_API_KEY], timeoutSeconds: 540, memory: "256MiB", enforceAppCheck: true },
   async (request, response) => {
     if (!request.auth) {
       throw new HttpsError("unauthenticated", "Du måste vara inloggad (eller anonym).");
@@ -166,15 +213,38 @@ export const generateBoard = onCall(
     const uid = request.auth.uid;
     const tier = tierForToken(request.auth.token);
 
-    const { mode, systemPrompt, userText } = request.data || {};
-    if (mode !== "create" && mode !== "edit") {
+    // --- Build the prompt server-side. The client only picks the topic
+    //     (create) or supplies the board + edit instruction (edit). ---
+    const { mode, theme, board, instruction } = request.data || {};
+    let systemPrompt, userText;
+    if (mode === "create") {
+      if (typeof theme !== "string" || !theme.trim()) {
+        throw new HttpsError("invalid-argument", "Saknar tema.");
+      }
+      if (theme.length > MAX_THEME_LEN) {
+        throw new HttpsError("invalid-argument", "Temat är för långt.");
+      }
+      systemPrompt = SYSTEM_PROMPT_CREATE;
+      userText = `Skapa ett quizpaket om ämnet: "${theme.trim()}".`;
+    } else if (mode === "edit") {
+      if (!board || typeof board !== "object" || Array.isArray(board)) {
+        throw new HttpsError("invalid-argument", "Saknar bräde att redigera.");
+      }
+      if (typeof instruction !== "string" || !instruction.trim()) {
+        throw new HttpsError("invalid-argument", "Saknar ändringsinstruktion.");
+      }
+      if (instruction.length > MAX_INSTRUCTION_LEN) {
+        throw new HttpsError("invalid-argument", "Instruktionen är för lång.");
+      }
+      let boardJson;
+      try { boardJson = JSON.stringify(board); } catch { boardJson = ""; }
+      if (!boardJson || boardJson.length > MAX_BOARD_JSON_LEN) {
+        throw new HttpsError("invalid-argument", "Brädet är för stort eller ogiltigt.");
+      }
+      systemPrompt = SYSTEM_PROMPT_EDIT;
+      userText = `Här är det nuvarande quiz-paketet (JSON):\n${boardJson}\n\nINSTRUKTION FÖR ÄNDRING:\n"${instruction.trim()}"`;
+    } else {
       throw new HttpsError("invalid-argument", "Ogiltigt läge.");
-    }
-    if (typeof systemPrompt !== "string" || typeof userText !== "string") {
-      throw new HttpsError("invalid-argument", "Saknar prompt.");
-    }
-    if (systemPrompt.length > 12000 || userText.length > 20000) {
-      throw new HttpsError("invalid-argument", "Prompten är för lång.");
     }
 
     const day = todayKey();
@@ -182,10 +252,14 @@ export const generateBoard = onCall(
 
     const userRef = db.collection("ai_usage").doc(uid);
     const spendRef = db.collection("ai_spend").doc(month);
+    const globalRef = db.collection("ai_global").doc(day);
 
-    // --- Pre-flight checks in a transaction: daily count + monthly budget ---
-    await db.runTransaction(async (tx) => {
-      const [userSnap, spendSnap] = await Promise.all([tx.get(userRef), tx.get(spendRef)]);
+    // --- Pre-flight checks in a transaction: per-user daily count, hard global
+    //     daily ceiling, and the shared monthly budget for this tier. ---
+    const pre = await db.runTransaction(async (tx) => {
+      const [userSnap, globalSnap, spendSnap] = await Promise.all([
+        tx.get(userRef), tx.get(globalRef), tx.get(spendRef),
+      ]);
 
       const u = userSnap.exists ? userSnap.data() : {};
       const used = u.date === day ? (u.count || 0) : 0;
@@ -194,6 +268,12 @@ export const generateBoard = onCall(
           "resource-exhausted",
           tier === "staff" ? "STAFF_USER_LIMIT" : "USER_LIMIT"
         );
+      }
+
+      const g = globalSnap.exists ? globalSnap.data() : {};
+      const globalSpent = g.sek || 0;
+      if (globalSpent >= DAILY_BUDGET_SEK) {
+        throw new HttpsError("resource-exhausted", "DAILY_BUDGET_EXHAUSTED");
       }
 
       const sp = spendSnap.exists ? spendSnap.data() : {};
@@ -206,7 +286,14 @@ export const generateBoard = onCall(
       }
 
       tx.set(userRef, { date: day, count: used + 1 });
+      return { used: used + 1, spent, globalSpent };
     });
+    console.log(
+      `[generateBoard] uid=${uid} tier=${tier} mode=${mode} ` +
+      `userDay=${pre.used}/${USER_DAILY[tier]} ` +
+      `monthSpend=${pre.spent.toFixed(3)}/${MONTHLY_BUDGET_SEK[tier]} SEK ` +
+      `globalDay=${pre.globalSpent.toFixed(3)}/${DAILY_BUDGET_SEK} SEK`
+    );
 
     // --- Fan out to all models, streaming each result as it lands ---
     const apiKey = GEMINI_API_KEY.value();
@@ -241,17 +328,28 @@ export const generateBoard = onCall(
       })
     );
 
-    // --- Accrue actual cost to the shared monthly bucket (atomic increment) ---
+    // --- Accrue actual cost to the shared monthly bucket and the global daily
+    //     bucket (atomic increments). ---
     if (totalCostSek > 0) {
       try {
-        await spendRef.set(
-          { month, [`${tier}_sek`]: FieldValue.increment(totalCostSek) },
-          { merge: true }
-        );
+        await Promise.all([
+          spendRef.set(
+            { month, [`${tier}_sek`]: FieldValue.increment(totalCostSek) },
+            { merge: true }
+          ),
+          globalRef.set(
+            { day, sek: FieldValue.increment(totalCostSek) },
+            { merge: true }
+          ),
+        ]);
       } catch (e) {
         console.warn("Failed to record spend:", e?.message || e);
       }
     }
+    console.log(
+      `[generateBoard] done uid=${uid} drafts=${drafts.length} ` +
+      `errors=${errors.length} costSek=${totalCostSek.toFixed(4)}`
+    );
 
     if (drafts.length === 0) {
       throw new HttpsError(
